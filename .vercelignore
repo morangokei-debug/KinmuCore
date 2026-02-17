@@ -1,0 +1,36 @@
+# Vercelデプロイ時に除外するファイル
+
+# 開発環境
+.env.local
+.env*.local
+
+# テストファイル
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# ドキュメント
+DEPLOYMENT.md
+
+# Git関連
+.git
+.gitignore
+
+# ローカルSupabase
+supabase/.branches
+supabase/.temp
+
+# エディタ設定
+.vscode
+.idea
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# ログファイル
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

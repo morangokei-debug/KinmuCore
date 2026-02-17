@@ -116,18 +116,19 @@ http://localhost:3000 でアクセスできます。
 
 このプロジェクトはVercelでホスティングされています。
 
-### 環境変数の設定
+詳細なデプロイ手順は [DEPLOYMENT.md](./DEPLOYMENT.md) を参照してください。
 
-Vercelダッシュボードで以下の環境変数を設定してください：
+### 簡易手順
+
+1. GitHubリポジトリを作成してプッシュ
+2. Vercelダッシュボードでリポジトリをインポート
+3. 環境変数を設定
+4. デプロイ実行
+
+### 必要な環境変数
 
 - `NEXT_PUBLIC_SUPABASE_URL`: SupabaseプロジェクトのURL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabaseの公開API Key
-
-### デプロイ手順
-
-1. GitHubリポジトリをVercelにインポート
-2. 環境変数を設定
-3. デプロイ実行
 
 Vercelは`main`ブランチへのプッシュで自動デプロイされます。
 
