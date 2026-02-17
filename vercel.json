@@ -1,9 +1,13 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
   "outputDirectory": ".next",
+  "public": false,
+  "regions": ["hnd1"],
   "headers": [
     {
       "source": "/(.*)",
@@ -33,5 +37,14 @@
       "destination": "/api/health"
     }
   ],
-  "regions": ["hnd1"]
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": {
+      "description": "Supabase project URL",
+      "value": ""
+    },
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {
+      "description": "Supabase anonymous key",
+      "value": ""
+    }
+  }
 }
