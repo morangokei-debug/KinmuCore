@@ -112,6 +112,25 @@ http://localhost:3000 でアクセスできます。
 - [ ] 複数法人一元管理
 - [ ] 労務分析ダッシュボード
 
+## Vercelへのデプロイ
+
+このプロジェクトはVercelでホスティングされています。
+
+### 環境変数の設定
+
+Vercelダッシュボードで以下の環境変数を設定してください：
+
+- `NEXT_PUBLIC_SUPABASE_URL`: SupabaseプロジェクトのURL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabaseの公開API Key
+
+### デプロイ手順
+
+1. GitHubリポジトリをVercelにインポート
+2. 環境変数を設定
+3. デプロイ実行
+
+Vercelは`main`ブランチへのプッシュで自動デプロイされます。
+
 ## ディレクトリ構造
 
 ```
