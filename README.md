@@ -118,12 +118,24 @@ http://localhost:3000 でアクセスできます。
 
 詳細なデプロイ手順は [DEPLOYMENT.md](./DEPLOYMENT.md) を参照してください。
 
-### 簡易手順
+### 自動デプロイスクリプト（推奨）
 
-1. GitHubリポジトリを作成してプッシュ
-2. Vercelダッシュボードでリポジトリをインポート
-3. 環境変数を設定
-4. デプロイ実行
+#### 方法1: ワンステップデプロイ
+
+```bash
+# 1. GitHub認証（初回のみ）
+gh auth login -h github.com --web
+
+# 2. GitHubリポジトリ作成 & プッシュ
+./deploy-to-github.sh
+
+# 3. Vercelにデプロイ
+./deploy-to-vercel.sh
+```
+
+#### 方法2: 手動デプロイ
+
+詳細は [DEPLOYMENT.md](./DEPLOYMENT.md) を参照してください。
 
 ### 必要な環境変数
 
