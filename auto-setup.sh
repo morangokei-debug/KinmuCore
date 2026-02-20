@@ -46,10 +46,10 @@ echo "ブラウザでSupabase設定ページを開きます..."
 sleep 1
 
 if command -v open &> /dev/null; then
-    open "https://supabase.com/dashboard/project/gfkrdvdanebsvscefcll/auth/url-configuration"
+    open "https://supabase.com/dashboard/project/qxlucyxzfyqpmypmbokd/auth/url-configuration"
 else
     echo "URLを手動で開いてください:"
-    echo "https://supabase.com/dashboard/project/gfkrdvdanebsvscefcll/auth/url-configuration"
+    echo "https://supabase.com/dashboard/project/qxlucyxzfyqpmypmbokd/auth/url-configuration"
 fi
 
 echo ""

@@ -24,7 +24,7 @@ PharmBalanceと同じアカウントでログインしてください。
 以下の2つの環境変数を入力：
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://gfkrdvdanebsvscefcll.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://qxlucyxzfyqpmypmbokd.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdma3JkdmRhbmVic3ZzY2VmY2xsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1Nzc4MTQsImV4cCI6MjA4NjE1MzgxNH0.N777EExtkb8xRC0AlDLj01bLoPGQ-NIa9feH9-HbiAE
 ```
 
@@ -55,7 +55,7 @@ https://vercel.com/dashboard
 「Environment Variables」で以下を追加：
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://gfkrdvdanebsvscefcll.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://qxlucyxzfyqpmypmbokd.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdma3JkdmRhbmVic3ZzY2VmY2xsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1Nzc4MTQsImV4cCI6MjA4NjE1MzgxNH0.N777EExtkb8xRC0AlDLj01bLoPGQ-NIa9feH9-HbiAE
 ```
 

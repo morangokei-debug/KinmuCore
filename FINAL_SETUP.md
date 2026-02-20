@@ -27,7 +27,7 @@
 ## ✅ ステップ2: Supabase認証の設定
 
 ### 設定URL
-👉 **https://supabase.com/dashboard/project/gfkrdvdanebsvscefcll/auth/url-configuration**
+👉 **https://supabase.com/dashboard/project/qxlucyxzfyqpmypmbokd/auth/url-configuration**
 
 ### 設定内容
 
@@ -92,7 +92,7 @@ https://vercel.com/morangokei-debugs-projects/kinmucore
 | **本番URL** | https://kinmucore.vercel.app |
 | **Vercelプロジェクト** | https://vercel.com/morangokei-debugs-projects/kinmucore |
 | **GitHubリポジトリ** | https://github.com/morangokei-debug/KinmuCore |
-| **Supabaseプロジェクト** | https://gfkrdvdanebsvscefcll.supabase.co |
+| **Supabaseプロジェクト** | https://qxlucyxzfyqpmypmbokd.supabase.co |
 | **デプロイ方法** | `git push` で自動デプロイ（設定後） |
 | **リージョン** | Tokyo (hnd1) |
 
