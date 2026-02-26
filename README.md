@@ -4,6 +4,14 @@
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmorangokei-debug%2FKinmuCore&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY&envDescription=Supabase%E3%81%AE%E6%8E%A5%E7%B6%9A%E6%83%85%E5%A0%B1%E3%82%92%E5%85%A5%E5%8A%9B%E3%81%97%E3%81%A6%E3%81%8F%E3%81%A0%E3%81%95%E3%81%84&project-name=kinmucore&repository-name=KinmuCore)
 
+## 📚 ドキュメント
+
+- 🚀 **[クイックスタートガイド](./docs/QUICK_START.md)** - 15分で使い始める
+- 👨‍💼 **[管理者向けマニュアル](./docs/ADMIN_MANUAL.md)** - 日常操作の完全ガイド
+- 👥 **[スタッフ向けマニュアル](./docs/STAFF_MANUAL.md)** - 打刻方法の簡単説明（印刷推奨）
+- ⚙️ **[セットアップマニュアル](./docs/SETUP_MANUAL.md)** - システム構築と保守管理
+- 📖 **[ドキュメント一覧](./docs/README.md)** - すべてのマニュアル
+
 ## 機能一覧
 
 | 機能 | 説明 |
