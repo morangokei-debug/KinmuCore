@@ -17,10 +17,14 @@ export default function StoresPage() {
   const [editing, setEditing] = useState<Store | null>(null);
   const [form, setForm] = useState({ name: '', address: '', phone: '' });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
   const fetchStores = async () => {
-    const { data } = await supabase.from('stores').select('*').order('created_at');
+    const { data, error: fetchError } = await supabase.from('stores').select('*').order('created_at');
+    if (fetchError) {
+      console.error('stores fetch error:', fetchError);
+    }
     setStores(data || []);
     setLoading(false);
   };
@@ -32,27 +36,32 @@ export default function StoresPage() {
   const openCreate = () => {
     setEditing(null);
     setForm({ name: '', address: '', phone: '' });
+    setError(null);
     setModalOpen(true);
   };
 
   const openEdit = (store: Store) => {
     setEditing(store);
     setForm({ name: store.name, address: store.address || '', phone: store.phone || '' });
+    setError(null);
     setModalOpen(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    if (editing) {
-      await supabase
-        .from('stores')
-        .update({ name: form.name, address: form.address || null, phone: form.phone || null })
-        .eq('id', editing.id);
-    } else {
-      await supabase
-        .from('stores')
-        .insert({ name: form.name, address: form.address || null, phone: form.phone || null });
+    setError(null);
+
+    const payload = { name: form.name, address: form.address || null, phone: form.phone || null };
+    const result = editing
+      ? await supabase.from('stores').update(payload).eq('id', editing.id)
+      : await supabase.from('stores').insert(payload);
+
+    if (result.error) {
+      setError(result.error.message);
+      setSaving(false);
+      return;
     }
+
     setSaving(false);
     setModalOpen(false);
     fetchStores();
@@ -132,6 +141,11 @@ export default function StoresPage() {
         title={editing ? '店舗を編集' : '新しい店舗を登録'}
       >
         <div className="space-y-4">
+          {error && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
           <Input
             label="店舗名"
             value={form.name}
