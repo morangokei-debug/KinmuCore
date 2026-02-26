@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { Plus, Pencil, Store as StoreIcon } from 'lucide-react';
 import type { Store } from '@/types';
+import { createStore, updateStore, toggleStoreActive } from './actions';
 
 export default function StoresPage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -51,25 +52,32 @@ export default function StoresPage() {
     setSaving(true);
     setError(null);
 
-    const payload = { name: form.name, address: form.address || null, phone: form.phone || null };
-    const result = editing
-      ? await supabase.from('stores').update(payload).eq('id', editing.id)
-      : await supabase.from('stores').insert(payload);
+    const payload = {
+      name: form.name,
+      address: form.address || null,
+      phone: form.phone || null,
+    };
 
-    if (result.error) {
-      setError(result.error.message);
+    const result = editing
+      ? await updateStore(editing.id, payload)
+      : await createStore(payload);
+
+    if (!result.success && result.error) {
+      setError(result.error);
       setSaving(false);
       return;
     }
 
     setSaving(false);
     setModalOpen(false);
-    fetchStores();
+    await fetchStores();
   };
 
-  const toggleActive = async (store: Store) => {
-    await supabase.from('stores').update({ is_active: !store.is_active }).eq('id', store.id);
-    fetchStores();
+  const handleToggleActive = async (store: Store) => {
+    const result = await toggleStoreActive(store.id, store.is_active);
+    if (result.success) {
+      await fetchStores();
+    }
   };
 
   return (
@@ -124,7 +132,7 @@ export default function StoresPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => toggleActive(store)}
+                    onClick={() => handleToggleActive(store)}
                   >
                     {store.is_active ? '無効にする' : '有効にする'}
                   </Button>
