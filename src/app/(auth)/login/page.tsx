@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BarChart3 } from 'lucide-react';
@@ -12,7 +11,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
   const supabase = createClient();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -23,13 +21,12 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError('メールアドレスまたはパスワードが正しくありません');
+      setError(error.message || 'メールアドレスまたはパスワードが正しくありません');
       setLoading(false);
       return;
     }
 
-    router.push('/attendance');
-    router.refresh();
+    window.location.href = '/attendance';
   };
 
   return (
