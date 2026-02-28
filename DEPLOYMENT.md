@@ -146,6 +146,20 @@ https://*.vercel.app/auth/callback
 2. SupabaseダッシュボードでリダイレクトURLが設定されているか確認
 3. ブラウザのコンソールでエラーメッセージを確認
 
+### 「Failed to fetch」が表示される場合
+
+ログイン時に「Failed to fetch」が出る場合、以下の順に確認してください：
+
+1. **Vercel 環境変数**: `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY` が Production に設定されているか確認。未設定や `your-project.supabase.co` のままの場合に発生します。
+
+2. **Supabase プロジェクト**: LogicPharm/PharmBalance と同じ Supabase（例: `qxlucyxzfyqpmypmbokd.supabase.co`）を使用しているか確認。
+
+3. **Supabase URL Configuration**: Supabase Dashboard → Authentication → URL Configuration で以下を追加：
+   - **Site URL**: `https://kinmucore.vercel.app`
+   - **Redirect URLs**: `https://kinmucore.vercel.app/**` または `https://kinmucore.vercel.app/auth/callback`
+
+4. **再デプロイ**: 環境変数を変更した場合は、Vercel で「Redeploy」を実行してください（NEXT_PUBLIC_ はビルド時に埋め込まれるため）。
+
 ### データベースに接続できない場合
 
 1. Supabase RLSポリシーが正しく設定されているか確認
