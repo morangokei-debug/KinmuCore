@@ -20,6 +20,16 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // ログインページは Supabase 呼び出しをスキップ（504 タイムアウト回避）
+  if (request.nextUrl.pathname.startsWith('/login')) {
+    return supabaseResponse;
+  }
+
+  // 打刻ページ（/punch/*）は認証不要
+  if (request.nextUrl.pathname.startsWith('/punch')) {
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
     supabaseUrl,
     supabaseAnonKey,
@@ -38,28 +48,18 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // 打刻ページ（/punch/*）は認証不要
-  if (request.nextUrl.pathname.startsWith('/punch')) {
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data?.user ?? null;
+  } catch {
     return supabaseResponse;
   }
 
   // 未認証ユーザーをログインページへリダイレクト
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
+  if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    const redirect = NextResponse.redirect(url);
-    applyCookiesToResponse(redirect, supabaseResponse);
-    return redirect;
-  }
-
-  // 認証済みユーザーがログインページにアクセスした場合はダッシュボードへ
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/attendance';
     const redirect = NextResponse.redirect(url);
     applyCookiesToResponse(redirect, supabaseResponse);
     return redirect;
