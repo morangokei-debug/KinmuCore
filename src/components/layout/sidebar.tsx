@@ -13,25 +13,37 @@ import {
   Menu,
   X,
   CalendarDays,
+  Smartphone,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useUserRole } from '@/hooks/useUserRole';
 
-const navigation = [
+const adminNavigation = [
   { name: '勤怠管理', href: '/attendance', icon: Clock },
   { name: 'シフト', href: '/shifts', icon: CalendarDays },
   { name: 'スタッフ', href: '/staff', icon: Users },
   { name: '店舗管理', href: '/stores', icon: Store },
   { name: 'ポリシー', href: '/policies', icon: Settings },
+  { name: 'ユーザー管理', href: '/users', icon: UserCog },
   { name: 'データ出力', href: '/export', icon: Download },
+];
+
+const staffNavigation = [
+  { name: '打刻', href: '/punch-select', icon: Smartphone },
+  { name: 'シフト', href: '/shifts', icon: CalendarDays },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const role = useUserRole();
+
+  const navigation = role === 'staff' ? staffNavigation : adminNavigation;
 
   const handleLogout = async () => {
     const supabase = createClient();

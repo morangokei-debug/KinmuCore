@@ -1,5 +1,12 @@
 # ログインできない時の確認手順
 
+## 0. まず試すこと（最も多い原因）
+
+**使用しているURLを確認してください。**
+
+- **https://kinmucore.vercel.app** でログインできない → **https://kinmucore-iota.vercel.app/login** にアクセスしてログインを試してください。こちらは環境変数が正しく設定されています。
+- ログインページ下部の「kinmucore-iota.vercel.app」リンクからもアクセスできます。
+
 ## 1. Supabase の URL 設定（本番環境でログインできない場合）
 
 本番（Vercel）でログインできない場合、Supabase の URL 設定を確認してください。

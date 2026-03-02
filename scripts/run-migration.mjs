@@ -62,6 +62,7 @@ const migrationFiles = [
   '004_shift_system.sql',
   '006_staff_retired_status.sql',
   '007_add_contractor_type.sql',
+  '008_user_roles.sql',
 ];
 
 console.log('\nRunning migrations...\n');

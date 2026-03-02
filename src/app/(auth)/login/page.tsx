@@ -22,14 +22,29 @@ export default function LoginPage() {
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
       if (authError) {
-        setError(authError.message);
+        // よくあるエラーを分かりやすく表示
+        let message = authError.message;
+        if (authError.message === 'Invalid login credentials') {
+          message = 'メールアドレスまたはパスワードが正しくありません。もう一度ご確認ください。';
+        } else if (authError.message.includes('Email not confirmed')) {
+          message = 'メール認証が完了していません。Supabaseの管理画面で確認してください。';
+        }
+        setError(message);
         setLoading(false);
         return;
       }
 
       window.location.href = '/attendance';
-    } catch {
-      setError('接続エラーが発生しました。しばらく待ってから再度お試しください。');
+    } catch (err) {
+      const isNetworkError =
+        err instanceof TypeError && (err.message === 'fetch failed' || err.message.includes('Failed to fetch'));
+      if (isNetworkError) {
+        setError(
+          'サーバーに接続できません。別のURL（https://kinmucore-iota.vercel.app/login）をお試しください。'
+        );
+      } else {
+        setError('接続エラーが発生しました。しばらく待ってから再度お試しください。');
+      }
       setLoading(false);
     }
   };
@@ -73,6 +88,19 @@ export default function LoginPage() {
             <Button type="submit" loading={loading} className="w-full">
               ログイン
             </Button>
+
+            <p className="mt-4 text-center text-xs text-gray-500">
+              ログインできない場合は
+              <a
+                href="https://kinmucore-iota.vercel.app/login"
+                className="ml-1 text-blue-600 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                kinmucore-iota.vercel.app
+              </a>
+              をお試しください。
+            </p>
           </form>
         </div>
       </div>
