@@ -30,6 +30,11 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // 操作マニュアルは認証不要（誰でも参照可能）
+  if (request.nextUrl.pathname.startsWith('/manual')) {
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
     supabaseUrl,
     supabaseAnonKey,
