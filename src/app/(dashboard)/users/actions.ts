@@ -2,11 +2,18 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
+export async function listStaff(): Promise<{ id: string; name: string; store_id: string; store?: { name: string } }[]> {
+  const admin = createAdminClient();
+  const { data } = await admin.from('staff').select('id, name, store_id, store:stores(name)').eq('status', 'active').order('store_id').order('name');
+  return (data || []) as unknown as { id: string; name: string; store_id: string; store?: { name: string } }[];
+}
+
 export type UserWithRole = {
   id: string;
   email: string | null;
   created_at: string;
   role: 'admin' | 'staff';
+  staff_id: string | null;
 };
 
 export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithRole[] } | { ok: false; error: string }> {
@@ -16,17 +23,21 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
     if (authError) return { ok: false, error: authError.message };
 
     const userIds = authData.users.map((u) => u.id);
-    const { data: rolesData } = await admin.from('user_roles').select('user_id, role').in('user_id', userIds);
+    const { data: rolesData } = await admin.from('user_roles').select('user_id, role, staff_id').in('user_id', userIds);
 
-    const roleMap = new Map<string, 'admin' | 'staff'>();
-    (rolesData || []).forEach((r) => roleMap.set(r.user_id, r.role as 'admin' | 'staff'));
+    const roleMap = new Map<string, { role: 'admin' | 'staff'; staff_id: string | null }>();
+    (rolesData || []).forEach((r) => roleMap.set(r.user_id, { role: r.role as 'admin' | 'staff', staff_id: r.staff_id ?? null }));
 
-    const users: UserWithRole[] = authData.users.map((u) => ({
-      id: u.id,
-      email: u.email ?? null,
-      created_at: u.created_at,
-      role: roleMap.get(u.id) ?? 'admin',
-    }));
+    const users: UserWithRole[] = authData.users.map((u) => {
+      const r = roleMap.get(u.id);
+      return {
+        id: u.id,
+        email: u.email ?? null,
+        created_at: u.created_at,
+        role: r?.role ?? 'admin',
+        staff_id: r?.staff_id ?? null,
+      };
+    });
 
     return { ok: true, users };
   } catch (e) {
@@ -37,7 +48,8 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
 export async function createUser(
   email: string,
   password: string,
-  role: 'admin' | 'staff'
+  role: 'admin' | 'staff',
+  staffId?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const admin = createAdminClient();
@@ -52,10 +64,11 @@ export async function createUser(
     const { error: roleError } = await admin.from('user_roles').insert({
       user_id: user.user.id,
       role,
+      staff_id: role === 'staff' ? staffId || null : null,
     });
     if (roleError) {
       if (roleError.message?.includes('already') || roleError.code === '23505') {
-        await admin.from('user_roles').update({ role }).eq('user_id', user.user.id);
+        await admin.from('user_roles').update({ role, staff_id: role === 'staff' ? staffId || null : null }).eq('user_id', user.user.id);
       } else {
         return { ok: false, error: roleError.message };
       }
@@ -69,17 +82,20 @@ export async function createUser(
 
 export async function setUserRole(
   userId: string,
-  role: 'admin' | 'staff'
+  role: 'admin' | 'staff',
+  staffId?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const admin = createAdminClient();
     const { data: existing } = await admin.from('user_roles').select('id').eq('user_id', userId).single();
 
+    const payload = { role, staff_id: role === 'staff' ? staffId || null : null };
+
     if (existing) {
-      const { error } = await admin.from('user_roles').update({ role }).eq('user_id', userId);
+      const { error } = await admin.from('user_roles').update(payload).eq('user_id', userId);
       if (error) return { ok: false, error: error.message };
     } else {
-      const { error } = await admin.from('user_roles').insert({ user_id: userId, role });
+      const { error } = await admin.from('user_roles').insert({ user_id: userId, ...payload });
       if (error) return { ok: false, error: error.message };
     }
 

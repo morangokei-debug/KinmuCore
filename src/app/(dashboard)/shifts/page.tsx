@@ -7,10 +7,19 @@ import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
-import { ChevronLeft, ChevronRight, Download, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Settings, CalendarPlus, Check, X } from 'lucide-react';
 import type { Store, Staff, ShiftTemplate, Shift, Policy } from '@/types';
 import { EMPLOYMENT_TYPE_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
+import { useUserRole } from '@/hooks/useUserRole';
+import {
+  getPendingLeaveRequests,
+  getMyStaffId,
+  submitLeaveRequest,
+  approveLeaveRequest,
+  rejectLeaveRequest,
+} from './leave-actions';
+import type { LeaveRequestWithStaff } from './leave-actions';
 
 type ShiftMap = Record<string, Record<string, Shift | undefined>>;
 
@@ -33,6 +42,15 @@ export default function ShiftsPage() {
     is_paid_leave: false,
   });
   const supabase = createClient();
+  const role = useUserRole();
+  const isAdmin = role !== 'staff';
+
+  const [pendingLeaveRequests, setPendingLeaveRequests] = useState<LeaveRequestWithStaff[]>([]);
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ request_date: '', leave_type: 'full' as 'full' | 'half', reason: '' });
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
 
   const shiftStartDay = policy?.shift_start_day || 1;
 
@@ -84,7 +102,50 @@ export default function ShiftsPage() {
   useEffect(() => { fetchStores(); }, []);
   useEffect(() => { if (selectedStore) fetchData(); }, [selectedStore, year, month, fetchData]);
 
+  useEffect(() => {
+    if (selectedStore && isAdmin) {
+      getPendingLeaveRequests(selectedStore).then((r) => r.ok && setPendingLeaveRequests(r.requests));
+    } else {
+      setPendingLeaveRequests([]);
+    }
+  }, [selectedStore, isAdmin, fetchData]);
+
+  useEffect(() => {
+    if (!isAdmin) getMyStaffId().then(setMyStaffId);
+  }, [isAdmin]);
+
+
+  const handleSubmitLeave = async () => {
+    if (!myStaffId || !selectedStore || !leaveForm.request_date) return;
+    setLeaveError('');
+    setLeaveSubmitting(true);
+    const res = await submitLeaveRequest(myStaffId, selectedStore, leaveForm.request_date, leaveForm.leave_type, leaveForm.reason || undefined);
+    setLeaveSubmitting(false);
+    if (res.ok) {
+      setLeaveModalOpen(false);
+      setLeaveForm({ request_date: '', leave_type: 'full', reason: '' });
+      fetchData();
+    } else {
+      setLeaveError(res.error);
+    }
+  };
+
+  const handleApproveLeave = async (requestId: string) => {
+    if (!selectedStore) return;
+    const res = await approveLeaveRequest(requestId, selectedStore);
+    if (res.ok) {
+      setPendingLeaveRequests((prev) => prev.filter((r) => r.id !== requestId));
+      fetchData();
+    }
+  };
+
+  const handleRejectLeave = async (requestId: string) => {
+    const res = await rejectLeaveRequest(requestId);
+    if (res.ok) setPendingLeaveRequests((prev) => prev.filter((r) => r.id !== requestId));
+  };
+
   const handleCellClick = (staffId: string, date: string) => {
+    if (!isAdmin) return;
     setSelectedCell({ staffId, date });
   };
 
@@ -281,16 +342,56 @@ export default function ShiftsPage() {
             onChange={(e) => setSelectedStore(e.target.value)}
             className="w-40"
           />
-          <Button variant="outline" size="sm" onClick={openTemplateCreate}>
-            <Settings className="mr-1 h-4 w-4" />
-            区分
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportShiftExcel}>
-            <Download className="mr-1 h-4 w-4" />
-            Excel
-          </Button>
+          {!myStaffId && !isAdmin && (
+            <span className="text-xs text-amber-600">有給申請するにはユーザー管理でスタッフを紐づけてください</span>
+          )}
+          {myStaffId && (
+            <Button variant="outline" size="sm" onClick={() => setLeaveModalOpen(true)}>
+              <CalendarPlus className="mr-1 h-4 w-4" />
+              有給を申請
+            </Button>
+          )}
+          {isAdmin && (
+            <>
+              <Button variant="outline" size="sm" onClick={openTemplateCreate}>
+                <Settings className="mr-1 h-4 w-4" />
+                区分
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportShiftExcel}>
+                <Download className="mr-1 h-4 w-4" />
+                Excel
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* 有給申請通知（管理者のみ） */}
+      {isAdmin && pendingLeaveRequests.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h3 className="font-semibold text-amber-800">有給申請が{pendingLeaveRequests.length}件あります</h3>
+          <div className="mt-2 space-y-2">
+            {pendingLeaveRequests.map((req) => (
+              <div key={req.id} className="flex items-center justify-between rounded bg-white px-3 py-2 text-sm">
+                <span>
+                  {(req.staff as { name?: string })?.name || 'スタッフ'} - {req.request_date}（{req.leave_type === 'full' ? '1日' : '半日'}）
+                  {req.reason && <span className="ml-2 text-gray-500">理由: {req.reason}</span>}
+                </span>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => handleApproveLeave(req.id)}>
+                    <Check className="mr-1 h-3 w-3" />
+                    承認
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => handleRejectLeave(req.id)}>
+                    <X className="mr-1 h-3 w-3" />
+                    却下
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 月ナビ */}
       <div className="mb-4 flex items-center justify-center gap-4">
@@ -299,12 +400,12 @@ export default function ShiftsPage() {
         <Button variant="ghost" size="sm" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
       </div>
 
-      {/* シフト区分凡例 */}
+      {/* シフト区分凡例（管理者のみ編集可能） */}
       <div className="mb-4 flex flex-wrap gap-2">
         {templates.map((t) => (
           <button
             key={t.id}
-            onClick={() => openTemplateEdit(t)}
+            onClick={() => isAdmin && openTemplateEdit(t)}
             className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border hover:shadow-sm transition-shadow"
             style={{ borderColor: t.color, color: t.color }}
           >
@@ -314,12 +415,14 @@ export default function ShiftsPage() {
             {t.working_hours > 0 && `  ${t.working_hours}h`}）
           </button>
         ))}
-        <button
-          onClick={openTemplateCreate}
-          className="rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600"
-        >
-          + 追加
-        </button>
+        {isAdmin && (
+          <button
+            onClick={openTemplateCreate}
+            className="rounded-full border border-dashed border-gray-300 px-3 py-1 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600"
+          >
+            + 追加
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -559,6 +662,56 @@ export default function ShiftsPage() {
             <Button variant="ghost" onClick={() => setTemplateModalOpen(false)}>キャンセル</Button>
             <Button onClick={saveTemplate} disabled={!templateForm.code || !templateForm.name || !templateForm.short_label}>
               {editingTemplate ? '更新' : '追加'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 有給申請モーダル（スタッフ用） */}
+      <Modal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} title="有給を申請">
+        <div className="space-y-4">
+          <Input
+            label="希望日"
+            type="date"
+            value={leaveForm.request_date}
+            onChange={(e) => setLeaveForm({ ...leaveForm, request_date: e.target.value })}
+          />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">種別</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="leave_type"
+                  checked={leaveForm.leave_type === 'full'}
+                  onChange={() => setLeaveForm({ ...leaveForm, leave_type: 'full' })}
+                  className="rounded"
+                />
+                1日
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="leave_type"
+                  checked={leaveForm.leave_type === 'half'}
+                  onChange={() => setLeaveForm({ ...leaveForm, leave_type: 'half' })}
+                  className="rounded"
+                />
+                半日
+              </label>
+            </div>
+          </div>
+          <Input
+            label="理由（任意）"
+            value={leaveForm.reason}
+            onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+            placeholder="例: 私用"
+          />
+          {leaveError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{leaveError}</div>}
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="secondary" onClick={() => setLeaveModalOpen(false)}>キャンセル</Button>
+            <Button onClick={handleSubmitLeave} loading={leaveSubmitting} disabled={!leaveForm.request_date}>
+              申請する
             </Button>
           </div>
         </div>

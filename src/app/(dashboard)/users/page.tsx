@@ -7,14 +7,15 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { Badge } from '@/components/ui/badge';
 import { UserPlus, Shield, User } from 'lucide-react';
-import { listUsersWithRoles, createUser, setUserRole } from './actions';
+import { listUsersWithRoles, createUser, setUserRole, listStaff } from './actions';
 import type { UserWithRole } from './actions';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' as 'admin' | 'staff' });
+  const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' as 'admin' | 'staff', staff_id: '' });
+  const [staffList, setStaffList] = useState<{ id: string; name: string; store_id: string; store?: { name: string } }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,6 +32,10 @@ export default function UsersPage() {
     fetchUsers();
   }, []);
 
+  useEffect(() => {
+    listStaff().then(setStaffList);
+  }, []);
+
   const handleCreate = async () => {
     setError('');
     if (!createForm.email || !createForm.password) {
@@ -38,19 +43,19 @@ export default function UsersPage() {
       return;
     }
     setSaving(true);
-    const res = await createUser(createForm.email, createForm.password, createForm.role);
+    const res = await createUser(createForm.email, createForm.password, createForm.role, createForm.staff_id || null);
     setSaving(false);
     if (res.ok) {
       setModalOpen(false);
-      setCreateForm({ email: '', password: '', role: 'staff' });
+      setCreateForm({ email: '', password: '', role: 'staff', staff_id: '' });
       fetchUsers();
     } else {
       setError(res.error);
     }
   };
 
-  const handleRoleChange = async (userId: string, role: 'admin' | 'staff') => {
-    const res = await setUserRole(userId, role);
+  const handleRoleChange = async (userId: string, role: 'admin' | 'staff', staffId?: string | null) => {
+    const res = await setUserRole(userId, role, staffId);
     if (res.ok) {
       fetchUsers();
     }
@@ -83,6 +88,7 @@ export default function UsersPage() {
                   <tr className="border-b border-gray-200 text-left text-gray-500">
                     <th className="px-4 py-3 font-medium">メールアドレス</th>
                     <th className="px-4 py-3 font-medium">権限</th>
+                    <th className="px-4 py-3 font-medium">紐づけスタッフ</th>
                     <th className="px-4 py-3 font-medium">操作</th>
                   </tr>
                 </thead>
@@ -94,6 +100,20 @@ export default function UsersPage() {
                         <Badge variant={user.role === 'admin' ? 'info' : 'default'}>
                           {user.role === 'admin' ? '管理者' : 'スタッフ'}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        {user.role === 'staff' && (
+                          <select
+                            value={user.staff_id || ''}
+                            onChange={(e) => handleRoleChange(user.id, 'staff', e.target.value || null)}
+                            className="rounded border border-gray-300 px-2 py-1 text-xs"
+                          >
+                            <option value="">未設定</option>
+                            {staffList.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -148,7 +168,7 @@ export default function UsersPage() {
                   type="radio"
                   name="role"
                   checked={createForm.role === 'admin'}
-                  onChange={() => setCreateForm({ ...createForm, role: 'admin' })}
+                  onChange={() => setCreateForm({ ...createForm, role: 'admin', staff_id: '' })}
                   className="rounded"
                 />
                 管理者
@@ -165,6 +185,23 @@ export default function UsersPage() {
               </label>
             </div>
           </div>
+          {createForm.role === 'staff' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">紐づけるスタッフ（有給申請に必要）</label>
+              <select
+                value={createForm.staff_id}
+                onChange={(e) => setCreateForm({ ...createForm, staff_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">選択してください</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.store && `(${(s.store as { name?: string }).name})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
