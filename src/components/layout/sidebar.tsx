@@ -33,8 +33,8 @@ const adminNavigation = [
 ];
 
 const staffNavigation = [
-  { name: '打刻', href: '/punch-select', icon: Smartphone },
   { name: 'シフト', href: '/shifts', icon: CalendarDays },
+  { name: '打刻', href: '/punch-select', icon: Smartphone },
 ];
 
 export function Sidebar() {
@@ -99,10 +99,14 @@ export function Sidebar() {
     <>
       {/* モバイルハンバーガーメニュー */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 flex h-14 items-center border-b border-gray-200 bg-white px-4">
-        <button onClick={() => setMobileOpen(true)} className="p-2 text-gray-600">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="-ml-2 flex items-center justify-center rounded-lg p-3 text-gray-600 hover:bg-gray-100 min-w-[48px] min-h-[48px]"
+          aria-label="メニューを開く"
+        >
           <Menu className="h-6 w-6" />
         </button>
-        <div className="ml-3 flex items-center gap-2">
+        <div className="ml-3 flex items-center gap-2 flex-1">
           <BarChart3 className="h-5 w-5 text-blue-600" />
           <span className="font-bold text-gray-900">勤怠管理</span>
         </div>

@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Coffee, LogIn, LogOut, ArrowLeft } from 'lucide-react';
+import { Clock, Coffee, LogIn, LogOut, ArrowLeft, CalendarDays } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import type { PunchScreenStaff, PunchType, Store } from '@/types';
 
@@ -14,6 +15,7 @@ export default function PunchPage() {
   const params = useParams();
   const storeId = params.storeId as string;
   const [store, setStore] = useState<Store | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [staffList, setStaffList] = useState<PunchScreenStaff[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<PunchScreenStaff | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -84,6 +86,10 @@ export default function PunchPage() {
     const interval = setInterval(fetchStaffStatus, 30000);
     return () => clearInterval(interval);
   }, [fetchStaffStatus]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setIsAuthenticated(!!user));
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -247,19 +253,34 @@ export default function PunchPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      {/* シフト戻るバー（モバイルで画面上部に固定、常にタップ可能） */}
+      <div className="sticky top-0 z-30 border-b border-gray-200 bg-blue-600 px-4 py-3 sm:border-0 sm:bg-transparent sm:py-0 sm:px-0 sm:relative sm:z-auto">
+        <div className="mx-auto max-w-3xl">
+          <Link
+            href="/shifts"
+            className="flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/25 py-3 text-base font-semibold text-white active:bg-white/40 sm:inline-flex sm:min-h-0 sm:mb-3 sm:rounded-lg sm:bg-blue-50 sm:px-4 sm:py-2 sm:text-sm sm:font-medium sm:text-blue-700 sm:hover:bg-blue-100"
+          >
+            <CalendarDays className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+            シフトに戻る
+          </Link>
+        </div>
+      </div>
+
       {/* ヘッダー */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="mx-auto max-w-3xl flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{store.name}</h1>
-            <p className="text-sm text-gray-500">打刻画面</p>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-mono font-bold text-gray-900">
-              {currentTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+      <div className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6">
+        <div className="mx-auto max-w-3xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">{store.name}</h1>
+              <p className="text-sm text-gray-500">打刻画面</p>
             </div>
-            <div className="text-sm text-gray-500">
-              {currentTime.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })}
+            <div className="text-right">
+              <div className="text-3xl font-mono font-bold text-gray-900">
+                {currentTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div className="text-sm text-gray-500">
+                {currentTime.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })}
+              </div>
             </div>
           </div>
         </div>
