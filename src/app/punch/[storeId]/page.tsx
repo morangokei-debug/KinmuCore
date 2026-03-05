@@ -11,6 +11,11 @@ import { Clock, Coffee, LogIn, LogOut, ArrowLeft, CalendarDays } from 'lucide-re
 import { formatTime } from '@/lib/utils';
 import type { PunchScreenStaff, PunchType, Store } from '@/types';
 
+/** 日本時間(JST)での今日の日付 YYYY-MM-DD（端末のタイムゾーンに依存しない） */
+function getTodayJST(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' });
+}
+
 export default function PunchPage() {
   const params = useParams();
   const storeId = params.storeId as string;
@@ -41,8 +46,8 @@ export default function PunchPage() {
 
     if (!staffData) return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayJST = getTodayJST();
+    const todayStart = new Date(`${todayJST}T00:00:00+09:00`);
 
     const statuses: PunchScreenStaff[] = await Promise.all(
       staffData.map(async (staff: { id: string; name: string }) => {
@@ -50,7 +55,7 @@ export default function PunchPage() {
           .from('time_records')
           .select('punch_type, punched_at')
           .eq('staff_id', staff.id)
-          .gte('punched_at', today.toISOString())
+          .gte('punched_at', todayStart.toISOString())
           .order('punched_at', { ascending: false })
           .limit(1);
 
@@ -137,8 +142,7 @@ export default function PunchPage() {
   };
 
   const updateDailyAttendance = async (staffId: string, storeId: string, punchType: PunchType) => {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const today = getTodayJST();
 
     if (punchType === 'clock_in') {
       const { data: existing } = await supabase
@@ -181,9 +185,9 @@ export default function PunchPage() {
       }
     } else if (punchType === 'break_start' || punchType === 'break_end') {
       if (punchType === 'break_end') {
-        // 休憩終了時に休憩時間を計算
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        // 休憩終了時に休憩時間を計算（日本時間の今日0時で検索）
+        const todayJST = getTodayJST();
+        const todayStart = new Date(`${todayJST}T00:00:00+09:00`);
 
         const { data: breakStartRecord } = await supabase
           .from('time_records')
@@ -193,7 +197,7 @@ export default function PunchPage() {
           .gte('punched_at', todayStart.toISOString())
           .order('punched_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (breakStartRecord) {
           const breakStart = new Date(breakStartRecord.punched_at);
