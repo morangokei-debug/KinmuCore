@@ -2,27 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Smartphone, CalendarDays } from 'lucide-react';
 import type { Store } from '@/types';
+import { getStoresForCurrentUser } from '@/lib/actions/stores';
 
 export default function PunchSelectPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
   useEffect(() => {
-    const fetchStores = async () => {
-      const { data } = await supabase
-        .from('stores')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-      setStores(data || []);
+    getStoresForCurrentUser().then((data) => {
+      setStores(data);
       setLoading(false);
-    };
-    fetchStores();
+    });
   }, []);
 
   if (loading) {

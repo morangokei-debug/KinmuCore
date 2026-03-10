@@ -20,6 +20,7 @@ import {
   rejectLeaveRequest,
 } from './leave-actions';
 import type { LeaveRequestWithStaff } from './leave-actions';
+import { getStoresForCurrentUser } from '@/lib/actions/stores';
 
 type ShiftMap = Record<string, Record<string, Shift | undefined>>;
 
@@ -65,10 +66,13 @@ export default function ShiftsPage() {
   }, [year, month, shiftStartDay]);
 
   const fetchStores = useCallback(async () => {
-    const { data } = await supabase.from('stores').select('*').eq('is_active', true).order('name');
-    setStores(data || []);
-    if (data && data.length > 0 && !selectedStore) {
-      setSelectedStore(data[0].id);
+    const data = await getStoresForCurrentUser();
+    setStores(data);
+    if (data.length > 0) {
+      setSelectedStore((prev) => {
+        if (prev && data.some((s) => s.id === prev)) return prev;
+        return data[0].id;
+      });
     }
   }, []);
 
