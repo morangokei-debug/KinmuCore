@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -8,13 +8,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
-import { Clock, ChevronLeft, ChevronRight, Pencil, ExternalLink } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Pencil, ExternalLink, Store as StoreIcon } from 'lucide-react';
 import { formatDate, formatTime, minutesToHoursMinutes } from '@/lib/utils';
 import type { DailyAttendance, Store, Staff, AttendanceStatus } from '@/types';
 import { ATTENDANCE_STATUS_LABELS } from '@/types';
 
+type AttendanceRecord = DailyAttendance & { staff: Staff; store: Store };
+
 export default function AttendancePage() {
-  const [attendances, setAttendances] = useState<(DailyAttendance & { staff: Staff; store: Store })[]>([]);
+  const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [filterStore, setFilterStore] = useState('');
   const [year, setYear] = useState(new Date().getFullYear());
@@ -43,7 +45,7 @@ export default function AttendancePage() {
     }
 
     const { data } = await query;
-    setAttendances((data as (DailyAttendance & { staff: Staff; store: Store })[]) || []);
+    setAttendances((data as AttendanceRecord[]) || []);
     setLoading(false);
   };
 
@@ -133,6 +135,31 @@ export default function AttendancePage() {
   const totalWorkingMinutes = attendances.reduce((sum, a) => sum + a.working_minutes, 0);
   const totalDays = new Set(attendances.filter((a) => a.status === 'present').map((a) => a.work_date)).size;
 
+  // 店舗ごとにグループ化（全店舗表示時）
+  const groupedByStore = useMemo(() => {
+    const map = new Map<string, { store: Store; records: AttendanceRecord[] }>();
+    for (const r of attendances) {
+      const storeId = r.store_id;
+      const store = r.store;
+      if (!map.has(storeId)) {
+        map.set(storeId, { store: store!, records: [] });
+      }
+      map.get(storeId)!.records.push(r);
+    }
+    // 店舗名でソート、各店舗内は日付→スタッフ名でソート
+    const entries = Array.from(map.entries()).sort((a, b) =>
+      (a[1].store?.name ?? '').localeCompare(b[1].store?.name ?? '')
+    );
+    return entries.map(([, v]) => ({
+      store: v.store,
+      records: v.records.sort((a, b) => {
+        const d = a.work_date.localeCompare(b.work_date);
+        if (d !== 0) return -d;
+        return (a.staff?.name ?? '').localeCompare(b.staff?.name ?? '');
+      }),
+    }));
+  }, [attendances]);
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -216,14 +243,14 @@ export default function AttendancePage() {
             <p className="mt-4 text-gray-500">この月の勤怠データがありません</p>
           </CardContent>
         </Card>
-      ) : (
+      ) : filterStore ? (
+        /* 店舗指定時: 1つのテーブル（店舗列なし） */
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
                 <th className="px-4 py-3 font-medium">日付</th>
                 <th className="px-4 py-3 font-medium">スタッフ</th>
-                <th className="px-4 py-3 font-medium">店舗</th>
                 <th className="px-4 py-3 font-medium">出勤</th>
                 <th className="px-4 py-3 font-medium">退勤</th>
                 <th className="px-4 py-3 font-medium">休憩</th>
@@ -239,7 +266,6 @@ export default function AttendancePage() {
                     {formatDate(record.work_date, 'MM/dd (E)')}
                   </td>
                   <td className="px-4 py-3 text-gray-700">{record.staff?.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{record.store?.name}</td>
                   <td className="px-4 py-3 text-gray-700">
                     {record.clock_in ? formatTime(record.clock_in) : '-'}
                   </td>
@@ -264,6 +290,69 @@ export default function AttendancePage() {
               ))}
             </tbody>
           </table>
+        </div>
+      ) : (
+        /* 全店舗時: 店舗ごとにカードでグループ表示 */
+        <div className="space-y-6">
+          {groupedByStore.map(({ store, records }) => (
+            <Card key={store.id}>
+              <CardHeader className="border-b border-gray-100 bg-gray-50/50">
+                <div className="flex items-center gap-2">
+                  <StoreIcon className="h-5 w-5 text-gray-500" />
+                  <h3 className="text-lg font-semibold text-gray-900">{store.name}</h3>
+                  <span className="text-sm text-gray-500">（{records.length}件）</span>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500">
+                        <th className="px-4 py-3 font-medium">日付</th>
+                        <th className="px-4 py-3 font-medium">スタッフ</th>
+                        <th className="px-4 py-3 font-medium">出勤</th>
+                        <th className="px-4 py-3 font-medium">退勤</th>
+                        <th className="px-4 py-3 font-medium">休憩</th>
+                        <th className="px-4 py-3 font-medium">実働</th>
+                        <th className="px-4 py-3 font-medium">状態</th>
+                        <th className="px-4 py-3 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {records.map((record) => (
+                        <tr key={record.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            {formatDate(record.work_date, 'MM/dd (E)')}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{record.staff?.name}</td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {record.clock_in ? formatTime(record.clock_in) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {record.clock_out ? formatTime(record.clock_out) : '-'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500">{record.break_minutes}分</td>
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            {minutesToHoursMinutes(record.working_minutes)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={statusBadgeVariant(record.status)}>
+                              {ATTENDANCE_STATUS_LABELS[record.status]}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Button variant="ghost" size="sm" onClick={() => openEdit(record)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 

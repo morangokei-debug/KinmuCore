@@ -125,7 +125,7 @@ export default function UsersPage() {
                             管理者
                           </button>
                           <button
-                            onClick={() => handleRoleChange(user.id, 'staff')}
+                            onClick={() => handleRoleChange(user.id, 'staff', user.staff_id ?? undefined)}
                             className={`rounded px-2 py-1 text-xs ${user.role === 'staff' ? 'bg-gray-200 text-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}
                           >
                             <User className="inline h-3 w-3 mr-1" />

@@ -87,9 +87,20 @@ export async function setUserRole(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const admin = createAdminClient();
-    const { data: existing } = await admin.from('user_roles').select('id').eq('user_id', userId).single();
+    const { data: existing } = await admin
+      .from('user_roles')
+      .select('id, staff_id')
+      .eq('user_id', userId)
+      .single();
 
-    const payload = { role, staff_id: role === 'staff' ? staffId || null : null };
+    const staffIdToSet =
+      role === 'admin'
+        ? null
+        : staffId !== undefined
+          ? staffId || null
+          : existing?.staff_id ?? null;
+
+    const payload = { role, staff_id: staffIdToSet };
 
     if (existing) {
       const { error } = await admin.from('user_roles').update(payload).eq('user_id', userId);
