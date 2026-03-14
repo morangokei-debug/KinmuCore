@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { Badge } from '@/components/ui/badge';
 import { UserPlus, Shield, User } from 'lucide-react';
-import { listUsersWithRoles, createUser, setUserRole, listStaff } from './actions';
+import { listUsersWithRoles, createUser, setUserRole, listStaff, setShiftEditPermission } from './actions';
 import type { UserWithRole } from './actions';
 
 export default function UsersPage() {
@@ -61,6 +61,15 @@ export default function UsersPage() {
     }
   };
 
+  const handleShiftPermissionChange = async (userId: string, canEditShifts: boolean) => {
+    const res = await setShiftEditPermission(userId, canEditShifts);
+    if (res.ok) {
+      fetchUsers();
+    } else {
+      setError(res.error);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -89,6 +98,7 @@ export default function UsersPage() {
                     <th className="px-4 py-3 font-medium">メールアドレス</th>
                     <th className="px-4 py-3 font-medium">権限</th>
                     <th className="px-4 py-3 font-medium">紐づけスタッフ</th>
+                    <th className="px-4 py-3 font-medium">シフト編集</th>
                     <th className="px-4 py-3 font-medium">操作</th>
                   </tr>
                 </thead>
@@ -113,6 +123,21 @@ export default function UsersPage() {
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {user.role === 'admin' ? (
+                          <span className="text-xs text-gray-500">常に可</span>
+                        ) : (
+                          <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={user.can_edit_shifts}
+                              onChange={(e) => handleShiftPermissionChange(user.id, e.target.checked)}
+                              className="rounded"
+                            />
+                            編集可
+                          </label>
                         )}
                       </td>
                       <td className="px-4 py-3">

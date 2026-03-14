@@ -21,6 +21,7 @@ import {
 } from './leave-actions';
 import type { LeaveRequestWithStaff } from './leave-actions';
 import { getStoresForCurrentUser } from '@/lib/actions/stores';
+import { getShiftEditPermission, saveShiftAssignment } from './actions';
 
 type ShiftMap = Record<string, Record<string, Shift | undefined>>;
 
@@ -45,6 +46,8 @@ export default function ShiftsPage() {
   const supabase = createClient();
   const role = useUserRole();
   const isAdmin = role !== 'staff';
+  const [canEditShifts, setCanEditShifts] = useState(false);
+  const canManageShifts = isAdmin || canEditShifts;
 
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState<LeaveRequestWithStaff[]>([]);
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
@@ -118,6 +121,17 @@ export default function ShiftsPage() {
     if (!isAdmin) getMyStaffId().then(setMyStaffId);
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (role === null) return;
+    getShiftEditPermission().then((res) => {
+      if (res.ok) {
+        setCanEditShifts(res.canEditShifts);
+      } else {
+        setCanEditShifts(false);
+      }
+    });
+  }, [role]);
+
 
   const handleSubmitLeave = async () => {
     if (!myStaffId || !selectedStore || !leaveForm.request_date) return;
@@ -149,32 +163,23 @@ export default function ShiftsPage() {
   };
 
   const handleCellClick = (staffId: string, date: string) => {
-    if (!isAdmin) return;
+    if (!canManageShifts) return;
     setSelectedCell({ staffId, date });
   };
 
   const assignShift = async (templateId: string | null) => {
-    if (!selectedCell) return;
+    if (!selectedCell || !selectedStore) return;
     const { staffId, date } = selectedCell;
+    const res = await saveShiftAssignment({
+      staffId,
+      storeId: selectedStore,
+      workDate: date,
+      templateId,
+    });
 
-    if (templateId === null) {
-      // シフト削除
-      const existing = shifts[staffId]?.[date];
-      if (existing) {
-        await supabase.from('shifts').delete().eq('id', existing.id);
-      }
-    } else {
-      const existing = shifts[staffId]?.[date];
-      if (existing) {
-        await supabase.from('shifts').update({ shift_template_id: templateId }).eq('id', existing.id);
-      } else {
-        await supabase.from('shifts').insert({
-          staff_id: staffId,
-          store_id: selectedStore,
-          work_date: date,
-          shift_template_id: templateId,
-        });
-      }
+    if (!res.ok) {
+      alert(res.error);
+      return;
     }
 
     setSelectedCell(null);
@@ -336,7 +341,8 @@ export default function ShiftsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">シフト管理</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {shiftStartDay}日始まり｜セルをクリックしてシフトを割り当て
+            {shiftStartDay}日始まり｜
+            {canManageShifts ? 'セルをクリックしてシフトを割り当て' : '閲覧のみ（編集権限があるスタッフのみ編集可）'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -476,10 +482,12 @@ export default function ShiftsPage() {
                       return (
                         <td
                           key={dateStr}
-                          onClick={() => handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center cursor-pointer transition-colors border-l border-gray-50 ${
+                          onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
+                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
                             getDayClass(d)
-                          } ${isSelected ? 'ring-2 ring-blue-500 ring-inset' : 'hover:bg-blue-50'}`}
+                          } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
+                            isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
+                          }`}
                         >
                           {tmpl ? (
                             <span
@@ -525,10 +533,12 @@ export default function ShiftsPage() {
                       return (
                         <td
                           key={dateStr}
-                          onClick={() => handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center cursor-pointer transition-colors border-l border-gray-50 ${
+                          onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
+                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
                             getDayClass(d)
-                          } ${isSelected ? 'ring-2 ring-blue-500 ring-inset' : 'hover:bg-blue-50'}`}
+                          } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
+                            isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
+                          }`}
                         >
                           {tmpl ? (
                             <span
@@ -574,10 +584,12 @@ export default function ShiftsPage() {
                       return (
                         <td
                           key={dateStr}
-                          onClick={() => handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center cursor-pointer transition-colors border-l border-gray-50 ${
+                          onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
+                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
                             getDayClass(d)
-                          } ${isSelected ? 'ring-2 ring-blue-500 ring-inset' : 'hover:bg-blue-50'}`}
+                          } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
+                            isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
+                          }`}
                         >
                           {tmpl ? (
                             <span

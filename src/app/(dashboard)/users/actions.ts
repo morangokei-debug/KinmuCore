@@ -14,6 +14,7 @@ export type UserWithRole = {
   created_at: string;
   role: 'admin' | 'staff';
   staff_id: string | null;
+  can_edit_shifts: boolean;
 };
 
 export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithRole[] } | { ok: false; error: string }> {
@@ -23,10 +24,16 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
     if (authError) return { ok: false, error: authError.message };
 
     const userIds = authData.users.map((u) => u.id);
-    const { data: rolesData } = await admin.from('user_roles').select('user_id, role, staff_id').in('user_id', userIds);
+    const { data: rolesData } = await admin.from('user_roles').select('user_id, role, staff_id, can_edit_shifts').in('user_id', userIds);
 
-    const roleMap = new Map<string, { role: 'admin' | 'staff'; staff_id: string | null }>();
-    (rolesData || []).forEach((r) => roleMap.set(r.user_id, { role: r.role as 'admin' | 'staff', staff_id: r.staff_id ?? null }));
+    const roleMap = new Map<string, { role: 'admin' | 'staff'; staff_id: string | null; can_edit_shifts: boolean }>();
+    (rolesData || []).forEach((r) =>
+      roleMap.set(r.user_id, {
+        role: r.role as 'admin' | 'staff',
+        staff_id: r.staff_id ?? null,
+        can_edit_shifts: !!r.can_edit_shifts,
+      })
+    );
 
     const users: UserWithRole[] = authData.users.map((u) => {
       const r = roleMap.get(u.id);
@@ -36,6 +43,7 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
         created_at: u.created_at,
         role: r?.role ?? 'admin',
         staff_id: r?.staff_id ?? null,
+        can_edit_shifts: r?.can_edit_shifts ?? false,
       };
     });
 
@@ -65,10 +73,14 @@ export async function createUser(
       user_id: user.user.id,
       role,
       staff_id: role === 'staff' ? staffId || null : null,
+      can_edit_shifts: false,
     });
     if (roleError) {
       if (roleError.message?.includes('already') || roleError.code === '23505') {
-        await admin.from('user_roles').update({ role, staff_id: role === 'staff' ? staffId || null : null }).eq('user_id', user.user.id);
+        await admin
+          .from('user_roles')
+          .update({ role, staff_id: role === 'staff' ? staffId || null : null })
+          .eq('user_id', user.user.id);
       } else {
         return { ok: false, error: roleError.message };
       }
@@ -89,7 +101,7 @@ export async function setUserRole(
     const admin = createAdminClient();
     const { data: existing } = await admin
       .from('user_roles')
-      .select('id, staff_id')
+      .select('id, staff_id, can_edit_shifts')
       .eq('user_id', userId)
       .single();
 
@@ -100,7 +112,11 @@ export async function setUserRole(
           ? staffId || null
           : existing?.staff_id ?? null;
 
-    const payload = { role, staff_id: staffIdToSet };
+    const payload = {
+      role,
+      staff_id: staffIdToSet,
+      can_edit_shifts: role === 'admin' ? false : existing?.can_edit_shifts ?? false,
+    };
 
     if (existing) {
       const { error } = await admin.from('user_roles').update(payload).eq('user_id', userId);
@@ -110,6 +126,43 @@ export async function setUserRole(
       if (error) return { ok: false, error: error.message };
     }
 
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function setShiftEditPermission(
+  userId: string,
+  canEditShifts: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const admin = createAdminClient();
+    const { data: existing } = await admin
+      .from('user_roles')
+      .select('id, role, staff_id')
+      .eq('user_id', userId)
+      .single();
+
+    if (existing) {
+      if (existing.role !== 'staff') {
+        return { ok: false, error: 'スタッフ権限のユーザーのみ設定できます' };
+      }
+      const { error } = await admin
+        .from('user_roles')
+        .update({ can_edit_shifts: canEditShifts })
+        .eq('user_id', userId);
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    }
+
+    const { error } = await admin.from('user_roles').insert({
+      user_id: userId,
+      role: 'staff',
+      staff_id: null,
+      can_edit_shifts: canEditShifts,
+    });
+    if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
