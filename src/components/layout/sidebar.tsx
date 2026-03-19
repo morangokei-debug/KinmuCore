@@ -98,7 +98,7 @@ export function Sidebar() {
   return (
     <>
       {/* モバイルハンバーガーメニュー */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 flex h-14 items-center border-b border-gray-200 bg-white px-4">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 flex h-14 items-center border-b border-gray-200 bg-white px-4 print:hidden">
         <button
           onClick={() => setMobileOpen(true)}
           className="-ml-2 flex items-center justify-center rounded-lg p-3 text-gray-600 hover:bg-gray-100 min-w-[48px] min-h-[48px]"
@@ -114,7 +114,7 @@ export function Sidebar() {
 
       {/* モバイルサイドバーオーバーレイ */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
+        <div className="lg:hidden fixed inset-0 z-50 print:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <div className="relative flex h-full w-64 flex-col bg-white">
             <button
@@ -129,7 +129,7 @@ export function Sidebar() {
       )}
 
       {/* デスクトップサイドバー */}
-      <div className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 border-r border-gray-200 bg-white">
+      <div className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 border-r border-gray-200 bg-white print:!hidden">
         <NavContent />
       </div>
     </>
