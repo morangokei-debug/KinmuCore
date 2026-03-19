@@ -489,7 +489,7 @@ export default function ShiftsPage() {
             {canManageShifts ? 'セルをクリックしてシフトを割り当て' : '閲覧のみ（編集権限があるスタッフのみ編集可）'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select
             options={stores.map((s) => ({ value: s.id, label: s.name }))}
             value={selectedStore}
@@ -521,6 +521,10 @@ export default function ShiftsPage() {
               有給を申請
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={printShiftTable}>
+            <Printer className="mr-1 h-4 w-4" />
+            印刷
+          </Button>
           {isAdmin && (
             <>
               <Button variant="outline" size="sm" onClick={openTemplateCreate}>
@@ -530,10 +534,6 @@ export default function ShiftsPage() {
               <Button variant="outline" size="sm" onClick={exportShiftExcel}>
                 <Download className="mr-1 h-4 w-4" />
                 Excel
-              </Button>
-              <Button variant="outline" size="sm" onClick={printShiftTable}>
-                <Printer className="mr-1 h-4 w-4" />
-                印刷
               </Button>
             </>
           )}
@@ -1032,18 +1032,40 @@ export default function ShiftsPage() {
           </div>
         </div>
       </Modal>
+      {/* タブレット向けフローティング印刷ボタン */}
+      <button
+        onClick={printShiftTable}
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-lg transition-all hover:bg-[var(--accent-hover)] hover:shadow-xl active:scale-95 sm:hidden md:flex lg:hidden print:hidden"
+        aria-label="シフトを印刷"
+      >
+        <Printer className="h-6 w-6" />
+      </button>
+
       <style jsx global>{`
         @media print {
           @page {
             size: A4 landscape;
-            margin: 8mm;
+            margin: 6mm;
           }
           body {
             background: #fff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .shift-print-area .sticky {
             position: static !important;
             left: auto !important;
+          }
+          .shift-print-area table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            font-size: 8px !important;
+          }
+          .shift-print-area th,
+          .shift-print-area td {
+            padding: 2px 3px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
           }
         }
       `}</style>
