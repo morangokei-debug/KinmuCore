@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { AlertTriangle, Download, FileSpreadsheet, FileText } from 'lucide-react';
-import { formatDate, minutesToDecimalHours } from '@/lib/utils';
+import { formatDate, minutesToDecimalHours, toLocalDateStr } from '@/lib/utils';
 import type { Store, Staff, DailyAttendance } from '@/types';
 import { EMPLOYMENT_TYPE_LABELS, ATTENDANCE_STATUS_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
@@ -75,7 +75,7 @@ export default function ExportPage() {
 
   const fetchExportData = async () => {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = toLocalDateStr(new Date(year, month, 0));
 
     let query = supabase
       .from('daily_attendance')
@@ -95,7 +95,7 @@ export default function ExportPage() {
 
   const fetchLeaveRequests = async () => {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = toLocalDateStr(new Date(year, month, 0));
 
     let query = supabase
       .from('leave_requests')
@@ -183,7 +183,7 @@ export default function ExportPage() {
 
   const fetchPaidLeaveShiftHours = async () => {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = toLocalDateStr(new Date(year, month, 0));
 
     let query = supabase
       .from('shifts')
@@ -209,7 +209,7 @@ export default function ExportPage() {
   };
 
   const validateMissingPunches = (records: (DailyAttendance & { staff: Staff; store: Store })[]) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toLocalDateStr(new Date());
     const issues: MissingPunchIssue[] = [];
 
     records.forEach((record) => {

@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { ChevronLeft, ChevronRight, Download, Settings, CalendarPlus, Check, X, Printer, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Store, Staff, ShiftTemplate, Shift, Policy } from '@/types';
+import { toLocalDateStr } from '@/lib/utils';
 import { EMPLOYMENT_TYPE_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -99,8 +100,8 @@ export default function ShiftsPage() {
     if (!selectedStore) return;
     setLoading(true);
 
-    const startDate = dateRange[0]?.toISOString().split('T')[0];
-    const endDate = dateRange[dateRange.length - 1]?.toISOString().split('T')[0];
+    const startDate = dateRange[0] ? toLocalDateStr(dateRange[0]) : '';
+    const endDate = dateRange[dateRange.length - 1] ? toLocalDateStr(dateRange[dateRange.length - 1]) : '';
 
     const [staffRes, templateRes, shiftRes, policyRes] = await Promise.all([
       supabase.from('staff').select('*').eq('store_id', selectedStore).eq('status', 'active').order('display_order').order('name'),
@@ -254,7 +255,7 @@ export default function ShiftsPage() {
     let totalDays = 0;
     let paidLeave = 0;
     dateRange.forEach((d) => {
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(d);
       const shift = shifts[staffId]?.[dateStr];
       if (shift?.shift_template) {
         if (shift.shift_template.is_paid_leave) {
@@ -382,7 +383,7 @@ export default function ShiftsPage() {
         const lowerRow: (string | number)[] = ['', ''];
 
         dateRange.forEach((d) => {
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = toLocalDateStr(d);
           const shift = shifts[staff.id]?.[dateStr];
           const tmpl = shift?.shift_template;
           upperRow.push(tmpl?.start_time ? tmpl.start_time.substring(0, 5) : '');
@@ -837,7 +838,7 @@ export default function ShiftsPage() {
                       </div>
                     </td>
                     {dateRange.map((d) => {
-                      const dateStr = d.toISOString().split('T')[0];
+                      const dateStr = toLocalDateStr(d);
                       const shift = shifts[staff.id]?.[dateStr];
                       const tmpl = shift?.shift_template;
                       const isSelected = selectedCell?.staffId === staff.id && selectedCell?.date === dateStr;

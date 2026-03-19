@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { Clock, ChevronLeft, ChevronRight, Pencil, ExternalLink, Store as StoreIcon } from 'lucide-react';
-import { formatDate, formatTime, minutesToHoursMinutes } from '@/lib/utils';
+import { formatDate, formatTime, minutesToHoursMinutes, toLocalDateStr } from '@/lib/utils';
 import type { DailyAttendance, Store, Staff, AttendanceStatus } from '@/types';
 import { ATTENDANCE_STATUS_LABELS } from '@/types';
 
@@ -30,7 +30,7 @@ export default function AttendancePage() {
   const fetchData = async () => {
     setLoading(true);
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const endDate = toLocalDateStr(new Date(year, month, 0));
 
     let query = supabase
       .from('daily_attendance')

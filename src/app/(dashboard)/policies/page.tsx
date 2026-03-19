@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { Plus, Pencil, Settings } from 'lucide-react';
 import type { Policy, Store, RoundingUnit, BreakDeductionType, ClosingDay } from '@/types';
+import { toLocalDateStr } from '@/lib/utils';
 
 export default function PoliciesPage() {
   const [policies, setPolicies] = useState<(Policy & { store: Store })[]>([]);
@@ -34,7 +35,7 @@ export default function PoliciesPage() {
     allow_early_clock_in: true,
     count_early_minutes: true,
     shift_start_day: '1',
-    effective_from: new Date().toISOString().split('T')[0],
+    effective_from: toLocalDateStr(new Date()),
   });
   const supabase = createClient();
 
@@ -70,7 +71,7 @@ export default function PoliciesPage() {
       allow_early_clock_in: true,
       count_early_minutes: true,
       shift_start_day: '1',
-      effective_from: new Date().toISOString().split('T')[0],
+      effective_from: toLocalDateStr(new Date()),
     });
     setModalOpen(true);
   };

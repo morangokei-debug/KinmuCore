@@ -43,6 +43,11 @@ export function calculateWorkingMinutes(
   return Math.max(0, totalMinutes - breakMinutes);
 }
 
+/** ローカルタイムゾーンの YYYY-MM-DD 文字列を返す（toISOString はUTCに変換されてずれるため） */
+export function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(' ');
 }

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
 import { Plus, Pencil, Users, Trash2, UserX } from 'lucide-react';
 import type { Staff, Store, EmploymentType, StaffStatus } from '@/types';
+import { toLocalDateStr } from '@/lib/utils';
 import { EMPLOYMENT_TYPE_LABELS, STAFF_STATUS_LABELS } from '@/types';
 
 export default function StaffPage() {
@@ -23,7 +24,7 @@ export default function StaffPage() {
   const [targetStaff, setTargetStaff] = useState<Staff | null>(null);
   const [filterStore, setFilterStore] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('active');
-  const [retireDate, setRetireDate] = useState(new Date().toISOString().split('T')[0]);
+  const [retireDate, setRetireDate] = useState(toLocalDateStr(new Date()));
   const [form, setForm] = useState({
     name: '',
     name_kana: '',
@@ -99,7 +100,7 @@ export default function StaffPage() {
   // 退職処理
   const openRetire = (staff: Staff) => {
     setTargetStaff(staff);
-    setRetireDate(new Date().toISOString().split('T')[0]);
+    setRetireDate(toLocalDateStr(new Date()));
     setRetireModalOpen(true);
   };
 
