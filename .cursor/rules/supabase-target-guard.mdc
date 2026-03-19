@@ -1,0 +1,18 @@
+---
+description: デプロイ前に本番Supabase接続先の取り違えを防止する
+alwaysApply: true
+---
+
+# Supabase Target Guard
+
+本番反映や環境変数変更を行う前に、以下を必ず実施する。
+
+1. `vercel env pull` で production の `NEXT_PUBLIC_SUPABASE_URL` を確認する。
+2. ユーザーが指定した対象プロジェクト（project ref）と一致するか照合する。
+3. 一致しない場合は、先に `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` の3点を同じ project ref の値へ揃える。
+4. 反映後は再度 `vercel env pull` で確認し、`vercel --prod` 実行前にユーザーへ接続先refを明示して報告する。
+
+## 禁止
+
+- Supabase接続先refが未確認のまま `vercel --prod` を実行しない。
+- URLだけを切り替えて anon/service_role キーを別projectのまま混在させない。

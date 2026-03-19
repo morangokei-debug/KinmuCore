@@ -7,13 +7,15 @@ import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
-import { ChevronLeft, ChevronRight, Download, Settings, CalendarPlus, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Settings, CalendarPlus, Check, X, Printer, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Store, Staff, ShiftTemplate, Shift, Policy } from '@/types';
 import { EMPLOYMENT_TYPE_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
 import { useUserRole } from '@/hooks/useUserRole';
 import {
   getPendingLeaveRequests,
+  getRecentLeaveRequests,
+  getMyLeaveRequests,
   getMyStaffId,
   submitLeaveRequest,
   approveLeaveRequest,
@@ -24,6 +26,8 @@ import { getStoresForCurrentUser } from '@/lib/actions/stores';
 import { getShiftEditPermission, saveShiftAssignment } from './actions';
 
 type ShiftMap = Record<string, Record<string, Shift | undefined>>;
+type StaffSortMode = 'display_order' | 'name' | 'hours_desc' | 'hours_asc';
+type LeaveTypeKey = 'full' | 'half' | 'hourly';
 
 export default function ShiftsPage() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -50,11 +54,22 @@ export default function ShiftsPage() {
   const canManageShifts = isAdmin || canEditShifts;
 
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState<LeaveRequestWithStaff[]>([]);
+  const [recentLeaveRequests, setRecentLeaveRequests] = useState<LeaveRequestWithStaff[]>([]);
+  const [myLeaveRequests, setMyLeaveRequests] = useState<LeaveRequestWithStaff[]>([]);
+  const [historyFilterStaff, setHistoryFilterStaff] = useState('');
+  const [historyFilterStatus, setHistoryFilterStatus] = useState('');
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ request_date: '', leave_type: 'full' as 'full' | 'half', reason: '' });
+  const [leaveForm, setLeaveForm] = useState({
+    request_date: '',
+    leave_type: 'full' as 'full' | 'half' | 'hourly',
+    requested_hours: '1',
+    reason: '',
+  });
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const [leaveError, setLeaveError] = useState('');
+  const [staffSortMode, setStaffSortMode] = useState<StaffSortMode>('display_order');
+  const [orderSaving, setOrderSaving] = useState(false);
 
   const shiftStartDay = policy?.shift_start_day || 1;
 
@@ -111,14 +126,25 @@ export default function ShiftsPage() {
 
   useEffect(() => {
     if (selectedStore && isAdmin) {
-      getPendingLeaveRequests(selectedStore).then((r) => r.ok && setPendingLeaveRequests(r.requests));
+      Promise.all([getPendingLeaveRequests(selectedStore), getRecentLeaveRequests(selectedStore)]).then(([pending, recent]) => {
+        if (pending.ok) setPendingLeaveRequests(pending.requests);
+        if (recent.ok) setRecentLeaveRequests(recent.requests);
+      });
     } else {
       setPendingLeaveRequests([]);
+      setRecentLeaveRequests([]);
     }
   }, [selectedStore, isAdmin, fetchData]);
 
   useEffect(() => {
-    if (!isAdmin) getMyStaffId().then(setMyStaffId);
+    if (!isAdmin) {
+      getMyStaffId().then((id) => {
+        setMyStaffId(id);
+        if (id) {
+          getMyLeaveRequests(id).then((r) => r.ok && setMyLeaveRequests(r.requests));
+        }
+      });
+    }
   }, [isAdmin]);
 
   useEffect(() => {
@@ -137,11 +163,18 @@ export default function ShiftsPage() {
     if (!myStaffId || !selectedStore || !leaveForm.request_date) return;
     setLeaveError('');
     setLeaveSubmitting(true);
-    const res = await submitLeaveRequest(myStaffId, selectedStore, leaveForm.request_date, leaveForm.leave_type, leaveForm.reason || undefined);
+    const res = await submitLeaveRequest(
+      myStaffId,
+      selectedStore,
+      leaveForm.request_date,
+      leaveForm.leave_type,
+      leaveForm.leave_type === 'hourly' ? parseFloat(leaveForm.requested_hours) : undefined,
+      leaveForm.reason || undefined
+    );
     setLeaveSubmitting(false);
     if (res.ok) {
       setLeaveModalOpen(false);
-      setLeaveForm({ request_date: '', leave_type: 'full', reason: '' });
+      setLeaveForm({ request_date: '', leave_type: 'full', requested_hours: '1', reason: '' });
       fetchData();
     } else {
       setLeaveError(res.error);
@@ -197,6 +230,23 @@ export default function ShiftsPage() {
   };
 
   const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+  const normalize = (v?: string | null) => (v || '').toLowerCase();
+  const formatDateTime = (v?: string | null) => {
+    if (!v) return '-';
+    return new Date(v).toLocaleString('ja-JP', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const sortByDisplayOrder = useCallback((a: Staff, b: Staff) => {
+    const byOrder = (a.display_order ?? 0) - (b.display_order ?? 0);
+    if (byOrder !== 0) return byOrder;
+    return a.name.localeCompare(b.name, 'ja');
+  }, []);
 
   const getStaffSummary = (staffId: string) => {
     let totalHours = 0;
@@ -217,10 +267,55 @@ export default function ShiftsPage() {
     return { totalHours, totalDays, paidLeave };
   };
 
+  const leaveLinkedTemplates = useMemo(() => {
+    const paid = templates.filter((t) => t.is_paid_leave);
+    const full =
+      paid.find((t) => normalize(t.code) === 'paid_leave') ??
+      paid.find((t) => normalize(t.name).includes('有給') && !normalize(t.name).includes('半')) ??
+      paid[0];
+    const half =
+      paid.find((t) => normalize(t.code) === 'half_paid' || normalize(t.code) === 'h.rest') ??
+      paid.find((t) => normalize(t.name).includes('半日') || normalize(t.short_label).includes('半休'));
+    const hourly =
+      paid.find((t) => normalize(t.code) === 'hourly_paid') ??
+      paid.find((t) => normalize(t.name).includes('時間') || normalize(t.short_label).includes('時間'));
+    return { full, half, hourly };
+  }, [templates]);
+
+  const getLeaveTypeText = (type: LeaveTypeKey) => {
+    if (type === 'hourly') return `時間（選択値を反映: ${leaveForm.requested_hours}時間）`;
+    const tmpl = leaveLinkedTemplates[type];
+    if (!tmpl) return type === 'full' ? '1日（未設定）' : '半日（未設定）';
+    return `${type === 'full' ? '1日' : '半日'}（${tmpl.working_hours}時間 / ${tmpl.short_label}）`;
+  };
+
+  const sortStaffGroup = useCallback(
+    (group: Staff[]) => {
+      const sorted = [...group];
+      if (staffSortMode === 'name') {
+        sorted.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      } else if (staffSortMode === 'hours_desc') {
+        sorted.sort((a, b) => getStaffSummary(b.id).totalHours - getStaffSummary(a.id).totalHours);
+      } else if (staffSortMode === 'hours_asc') {
+        sorted.sort((a, b) => getStaffSummary(a.id).totalHours - getStaffSummary(b.id).totalHours);
+      } else {
+        sorted.sort(sortByDisplayOrder);
+      }
+      return sorted;
+    },
+    [staffSortMode, shifts, dateRange, sortByDisplayOrder]
+  );
+
   // グループ分け（正社員 / パート / 業務委託）
-  const fullTimeStaff = staffList.filter((s) => s.employment_type === 'full_time');
-  const partTimeStaff = staffList.filter((s) => s.employment_type === 'part_time');
-  const contractorStaff = staffList.filter((s) => s.employment_type === 'contractor');
+  const fullTimeStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'full_time'));
+  const partTimeStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'part_time'));
+  const contractorStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'contractor'));
+  const sortedStaffList = sortStaffGroup(staffList);
+  const manualOrderedStaff = useMemo(() => [...staffList].sort(sortByDisplayOrder), [staffList, sortByDisplayOrder]);
+  const manualOrderIndexMap = useMemo(
+    () => new Map(manualOrderedStaff.map((staff, index) => [staff.id, index])),
+    [manualOrderedStaff]
+  );
 
   // テンプレート管理
   const openTemplateCreate = () => {
@@ -290,7 +385,11 @@ export default function ShiftsPage() {
           const shift = shifts[staff.id]?.[dateStr];
           const tmpl = shift?.shift_template;
           upperRow.push(tmpl?.start_time ? tmpl.start_time.substring(0, 5) : '');
-          lowerRow.push(tmpl?.short_label || '');
+          if (tmpl?.is_paid_leave && shift?.note?.includes('時間有給')) {
+            lowerRow.push(shift.note);
+          } else {
+            lowerRow.push(tmpl?.short_label || '');
+          }
         });
 
         // 集計列
@@ -335,9 +434,53 @@ export default function ShiftsPage() {
     XLSX.writeFile(wb, `シフト表_${storeName}_${year}年${month}月.xlsx`);
   };
 
+  const printShiftTable = () => {
+    window.print();
+  };
+
+  const moveStaffOrder = async (staffId: string, direction: 'up' | 'down') => {
+    if (!isAdmin || !selectedStore) return;
+
+    // 任意順は display_order ベースで保存する
+    if (staffSortMode !== 'display_order') {
+      setStaffSortMode('display_order');
+    }
+
+    const ordered = [...staffList].sort(sortByDisplayOrder);
+    const currentIndex = ordered.findIndex((s) => s.id === staffId);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ordered.length) return;
+
+    [ordered[currentIndex], ordered[targetIndex]] = [ordered[targetIndex], ordered[currentIndex]];
+    const normalized = ordered.map((staff, index) => ({ ...staff, display_order: index + 1 }));
+    setStaffList(normalized);
+    setOrderSaving(true);
+
+    try {
+      const results = await Promise.all(
+        normalized.map((staff, index) =>
+          supabase
+            .from('staff')
+            .update({ display_order: index + 1 })
+            .eq('id', staff.id)
+            .eq('store_id', selectedStore)
+        )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        alert(`並び順の保存に失敗しました: ${failed.error.message}`);
+        fetchData();
+      }
+    } finally {
+      setOrderSaving(false);
+    }
+  };
+
   return (
     <div>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">シフト管理</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -352,6 +495,22 @@ export default function ShiftsPage() {
             onChange={(e) => setSelectedStore(e.target.value)}
             className="w-40"
           />
+          <Select
+            options={[
+              { value: 'display_order', label: '並べ替え: 任意順(手動)' },
+              { value: 'name', label: '並べ替え: 名前順' },
+              { value: 'hours_desc', label: '並べ替え: 勤務時間(多い順)' },
+              { value: 'hours_asc', label: '並べ替え: 勤務時間(少ない順)' },
+            ]}
+            value={staffSortMode}
+            onChange={(e) => setStaffSortMode(e.target.value as StaffSortMode)}
+            className="w-48"
+          />
+          {isAdmin && staffSortMode === 'display_order' && (
+            <span className="text-xs text-gray-500">
+              名前の右の↑↓で任意順を保存できます{orderSaving ? '（保存中...）' : ''}
+            </span>
+          )}
           {!myStaffId && !isAdmin && (
             <span className="text-xs text-amber-600">有給申請するにはユーザー管理でスタッフを紐づけてください</span>
           )}
@@ -371,6 +530,10 @@ export default function ShiftsPage() {
                 <Download className="mr-1 h-4 w-4" />
                 Excel
               </Button>
+              <Button variant="outline" size="sm" onClick={printShiftTable}>
+                <Printer className="mr-1 h-4 w-4" />
+                印刷
+              </Button>
             </>
           )}
         </div>
@@ -378,13 +541,15 @@ export default function ShiftsPage() {
 
       {/* 有給申請通知（管理者のみ） */}
       {isAdmin && pendingLeaveRequests.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 print:hidden">
           <h3 className="font-semibold text-amber-800">有給申請が{pendingLeaveRequests.length}件あります</h3>
           <div className="mt-2 space-y-2">
             {pendingLeaveRequests.map((req) => (
               <div key={req.id} className="flex items-center justify-between rounded bg-white px-3 py-2 text-sm">
                 <span>
-                  {(req.staff as { name?: string })?.name || 'スタッフ'} - {req.request_date}（{req.leave_type === 'full' ? '1日' : '半日'}）
+                  {(req.staff as { name?: string })?.name || 'スタッフ'} - {req.request_date}（
+                  {req.leave_type === 'full' ? '1日' : req.leave_type === 'half' ? '半日' : `${req.requested_hours ?? 0}時間`}）
+                  <span className="ml-2 text-gray-500">申請: {formatDateTime(req.requested_at)}</span>
                   {req.reason && <span className="ml-2 text-gray-500">理由: {req.reason}</span>}
                 </span>
                 <div className="flex gap-2">
@@ -403,15 +568,157 @@ export default function ShiftsPage() {
         </div>
       )}
 
+      {/* 有給申請履歴（管理者向け） */}
+      {isAdmin && (() => {
+        const staffNames = Array.from(new Set(
+          recentLeaveRequests.map((r) => (r.staff as { name?: string })?.name).filter(Boolean)
+        )) as string[];
+
+        const filtered = recentLeaveRequests.filter((req) => {
+          const name = (req.staff as { name?: string })?.name || '';
+          if (historyFilterStaff && name !== historyFilterStaff) return false;
+          if (historyFilterStatus && req.status !== historyFilterStatus) return false;
+          return true;
+        });
+
+        return (
+          <Card className="mb-4 print:hidden">
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-base font-semibold text-gray-900">有給申請履歴</h3>
+                <select
+                  value={historyFilterStaff}
+                  onChange={(e) => setHistoryFilterStaff(e.target.value)}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+                >
+                  <option value="">全スタッフ</option>
+                  {staffNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <select
+                  value={historyFilterStatus}
+                  onChange={(e) => setHistoryFilterStatus(e.target.value)}
+                  className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700"
+                >
+                  <option value="">全状態</option>
+                  <option value="pending">承認待ち</option>
+                  <option value="approved">承認済み</option>
+                  <option value="rejected">却下</option>
+                </select>
+                <span className="text-xs text-gray-400">{filtered.length}件</span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {filtered.length === 0 ? (
+                <p className="text-sm text-gray-500">該当する履歴はありません</p>
+              ) : (
+                <div className="max-h-72 overflow-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">申請日時</th>
+                        <th className="px-3 py-2 font-medium">スタッフ</th>
+                        <th className="px-3 py-2 font-medium">希望日</th>
+                        <th className="px-3 py-2 font-medium">種別</th>
+                        <th className="px-3 py-2 font-medium">状態</th>
+                        <th className="px-3 py-2 font-medium">承認日時</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map((req) => (
+                        <tr key={req.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-700">{formatDateTime(req.requested_at)}</td>
+                          <td className="px-3 py-2 text-gray-900">{(req.staff as { name?: string })?.name || 'スタッフ'}</td>
+                          <td className="px-3 py-2 text-gray-700">{req.request_date}</td>
+                          <td className="px-3 py-2 text-gray-700">
+                            {req.leave_type === 'full' ? '1日' : req.leave_type === 'half' ? '半日' : `${req.requested_hours ?? 0}時間`}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs ${
+                                req.status === 'approved'
+                                  ? 'bg-green-100 text-green-700'
+                                  : req.status === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {req.status === 'approved' ? '承認済み' : req.status === 'rejected' ? '却下' : '承認待ち'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-500">{formatDateTime(req.decided_at || null)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* 自分の有給申請履歴（スタッフ本人向け） */}
+      {!isAdmin && myStaffId && (
+        <Card className="mb-4 print:hidden">
+          <CardHeader>
+            <h3 className="text-base font-semibold text-gray-900">あなたの有給申請履歴</h3>
+          </CardHeader>
+          <CardContent>
+            {myLeaveRequests.length === 0 ? (
+              <p className="text-sm text-gray-500">申請履歴はまだありません</p>
+            ) : (
+              <div className="max-h-72 overflow-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">申請日時</th>
+                      <th className="px-3 py-2 font-medium">希望日</th>
+                      <th className="px-3 py-2 font-medium">種別</th>
+                      <th className="px-3 py-2 font-medium">状態</th>
+                      <th className="px-3 py-2 font-medium">承認日時</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {myLeaveRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-700">{formatDateTime(req.requested_at)}</td>
+                        <td className="px-3 py-2 text-gray-700">{req.request_date}</td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {req.leave_type === 'full' ? '1日' : req.leave_type === 'half' ? '半日' : `${req.requested_hours ?? 0}時間`}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${
+                              req.status === 'approved'
+                                ? 'bg-green-100 text-green-700'
+                                : req.status === 'rejected'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {req.status === 'approved' ? '承認済み' : req.status === 'rejected' ? '却下' : '承認待ち'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-500">{formatDateTime(req.decided_at || null)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* 月ナビ */}
-      <div className="mb-4 flex items-center justify-center gap-4">
+      <div className="mb-4 flex items-center justify-center gap-4 print:hidden">
         <Button variant="ghost" size="sm" onClick={prevMonth}><ChevronLeft className="h-5 w-5" /></Button>
         <h2 className="text-lg font-bold text-gray-900">{year}年{month}月</h2>
         <Button variant="ghost" size="sm" onClick={nextMonth}><ChevronRight className="h-5 w-5" /></Button>
       </div>
 
       {/* シフト区分凡例（管理者のみ編集可能） */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2 print:hidden">
         {templates.map((t) => (
           <button
             key={t.id}
@@ -438,41 +745,76 @@ export default function ShiftsPage() {
       {loading ? (
         <div className="py-12 text-center text-gray-500">読み込み中...</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-          <table className="w-full text-xs">
+        <div className="shift-print-area overflow-x-auto rounded-xl border border-gray-200 bg-white print:overflow-visible print:rounded-none print:border-0">
+          <div className="hidden print:block">
+            <div className="mb-3 rounded-lg border border-gray-300 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
+              <div className="text-center text-lg font-semibold tracking-wide text-gray-900">
+                {stores.find((s) => s.id === selectedStore)?.name || ''} シフト表
+              </div>
+              <div className="text-center text-sm text-gray-600">
+                {year}年{month}月（{shiftStartDay}日始まり）
+              </div>
+            </div>
+          </div>
+          <table className="w-full text-xs print:table-fixed print:text-[9px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[60px]">区分</th>
-                <th className="sticky left-[60px] z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[80px]">名前</th>
+                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[60px] print:min-w-[42px] print:px-1 print:py-1">区分</th>
+                <th className="sticky left-[60px] z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[80px] print:min-w-[62px] print:px-1 print:py-1">名前</th>
                 {dateRange.map((d) => (
-                  <th key={d.toISOString()} className={`px-1 py-2 text-center font-medium min-w-[36px] ${getDayClass(d)}`}>
+                  <th key={d.toISOString()} className={`px-1 py-2 text-center font-medium min-w-[36px] print:min-w-[22px] print:px-0.5 print:py-1 ${getDayClass(d)}`}>
                     <div>{d.getDate()}</div>
                     <div className="text-[10px]">{dayLabels[d.getDay()]}</div>
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[50px]">時間</th>
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px]">日数</th>
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px]">有給</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[50px] print:min-w-[38px] print:px-1 print:py-1">時間</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[30px] print:px-1 print:py-1">日数</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[30px] print:px-1 print:py-1">有給</th>
               </tr>
             </thead>
             <tbody>
-              {/* 正社員グループ */}
-              {fullTimeStaff.length > 0 && (
-                <tr className="border-b border-gray-200 bg-blue-50/50">
-                  <td colSpan={dateRange.length + 5} className="px-2 py-1 text-xs font-semibold text-blue-700">
-                    正社員
-                  </td>
-                </tr>
-              )}
-              {fullTimeStaff.map((staff) => {
+              {sortedStaffList.map((staff) => {
                 const summary = getStaffSummary(staff.id);
                 return (
                   <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px]">
+                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px] print:px-1 print:py-1">
                       {EMPLOYMENT_TYPE_LABELS[staff.employment_type]}
                     </td>
-                    <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
-                      {staff.name}
+                    <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap print:px-1 print:py-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{staff.name}</span>
+                        {isAdmin && staffSortMode === 'display_order' && (
+                          <span className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveStaffOrder(staff.id, 'up');
+                              }}
+                              disabled={orderSaving || (manualOrderIndexMap.get(staff.id) ?? 0) === 0}
+                              className="rounded border border-gray-200 p-0.5 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 print:hidden"
+                              title="上へ"
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveStaffOrder(staff.id, 'down');
+                              }}
+                              disabled={
+                                orderSaving ||
+                                (manualOrderIndexMap.get(staff.id) ?? 0) === manualOrderedStaff.length - 1
+                              }
+                              className="rounded border border-gray-200 p-0.5 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 print:hidden"
+                              title="下へ"
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </button>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     {dateRange.map((d) => {
                       const dateStr = d.toISOString().split('T')[0];
@@ -483,7 +825,7 @@ export default function ShiftsPage() {
                         <td
                           key={dateStr}
                           onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
+                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 print:px-0.5 print:py-1 ${
                             getDayClass(d)
                           } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
                             isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
@@ -491,7 +833,7 @@ export default function ShiftsPage() {
                         >
                           {tmpl ? (
                             <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight"
+                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[9px]"
                               style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
                             >
                               {tmpl.short_label}
@@ -500,111 +842,9 @@ export default function ShiftsPage() {
                         </td>
                       );
                     })}
-                    <td className="px-2 py-1.5 text-center font-medium text-gray-700">{summary.totalHours}h</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.totalDays}</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.paidLeave}</td>
-                  </tr>
-                );
-              })}
-
-              {/* パートグループ */}
-              {partTimeStaff.length > 0 && (
-                <tr className="border-b border-gray-200 bg-amber-50/50">
-                  <td colSpan={dateRange.length + 5} className="px-2 py-1 text-xs font-semibold text-amber-700">
-                    パート
-                  </td>
-                </tr>
-              )}
-              {partTimeStaff.map((staff) => {
-                const summary = getStaffSummary(staff.id);
-                return (
-                  <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px]">
-                      {EMPLOYMENT_TYPE_LABELS[staff.employment_type]}
-                    </td>
-                    <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
-                      {staff.name}
-                    </td>
-                    {dateRange.map((d) => {
-                      const dateStr = d.toISOString().split('T')[0];
-                      const shift = shifts[staff.id]?.[dateStr];
-                      const tmpl = shift?.shift_template;
-                      const isSelected = selectedCell?.staffId === staff.id && selectedCell?.date === dateStr;
-                      return (
-                        <td
-                          key={dateStr}
-                          onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
-                            getDayClass(d)
-                          } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
-                            isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
-                          }`}
-                        >
-                          {tmpl ? (
-                            <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight"
-                              style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
-                            >
-                              {tmpl.short_label}
-                            </span>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                    <td className="px-2 py-1.5 text-center font-medium text-gray-700">{summary.totalHours}h</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.totalDays}</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.paidLeave}</td>
-                  </tr>
-                );
-              })}
-
-              {/* 業務委託グループ */}
-              {contractorStaff.length > 0 && (
-                <tr className="border-b border-gray-200 bg-purple-50/50">
-                  <td colSpan={dateRange.length + 5} className="px-2 py-1 text-xs font-semibold text-purple-700">
-                    業務委託
-                  </td>
-                </tr>
-              )}
-              {contractorStaff.map((staff) => {
-                const summary = getStaffSummary(staff.id);
-                return (
-                  <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px]">
-                      {EMPLOYMENT_TYPE_LABELS[staff.employment_type]}
-                    </td>
-                    <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap">
-                      {staff.name}
-                    </td>
-                    {dateRange.map((d) => {
-                      const dateStr = d.toISOString().split('T')[0];
-                      const shift = shifts[staff.id]?.[dateStr];
-                      const tmpl = shift?.shift_template;
-                      const isSelected = selectedCell?.staffId === staff.id && selectedCell?.date === dateStr;
-                      return (
-                        <td
-                          key={dateStr}
-                          onClick={() => canManageShifts && handleCellClick(staff.id, dateStr)}
-                          className={`px-0.5 py-1 text-center transition-colors border-l border-gray-50 ${
-                            getDayClass(d)
-                          } ${canManageShifts ? 'cursor-pointer' : 'cursor-default'} ${
-                            isSelected ? 'ring-2 ring-blue-500 ring-inset' : canManageShifts ? 'hover:bg-blue-50' : ''
-                          }`}
-                        >
-                          {tmpl ? (
-                            <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight"
-                              style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
-                            >
-                              {tmpl.short_label}
-                            </span>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                    <td className="px-2 py-1.5 text-center font-medium text-gray-700">{summary.totalHours}h</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.totalDays}</td>
-                    <td className="px-2 py-1.5 text-center text-gray-500">{summary.paidLeave}</td>
+                    <td className="px-2 py-1.5 text-center font-medium text-gray-700 print:px-1 print:py-1">{summary.totalHours}h</td>
+                    <td className="px-2 py-1.5 text-center text-gray-500 print:px-1 print:py-1">{summary.totalDays}</td>
+                    <td className="px-2 py-1.5 text-center text-gray-500 print:px-1 print:py-1">{summary.paidLeave}</td>
                   </tr>
                 );
               })}
@@ -703,7 +943,7 @@ export default function ShiftsPage() {
                   onChange={() => setLeaveForm({ ...leaveForm, leave_type: 'full' })}
                   className="rounded"
                 />
-                1日
+                {getLeaveTypeText('full')}
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -713,10 +953,50 @@ export default function ShiftsPage() {
                   onChange={() => setLeaveForm({ ...leaveForm, leave_type: 'half' })}
                   className="rounded"
                 />
-                半日
+                {getLeaveTypeText('half')}
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="leave_type"
+                  checked={leaveForm.leave_type === 'hourly'}
+                  onChange={() => setLeaveForm({ ...leaveForm, leave_type: 'hourly' })}
+                  className="rounded"
+                />
+                {getLeaveTypeText('hourly')}
               </label>
             </div>
+            {leaveForm.leave_type !== 'hourly' && !leaveLinkedTemplates[leaveForm.leave_type] && (
+              <p className="mt-2 text-xs text-amber-600">
+                この種別に対応する有給シフト区分が未設定です。`区分` から登録してください。
+              </p>
+            )}
           </div>
+          {leaveForm.leave_type === 'hourly' && (
+            <Select
+              label="時間（0.5時間単位）"
+              options={[
+                { value: '0.5', label: '0.5時間' },
+                { value: '1', label: '1時間' },
+                { value: '1.5', label: '1.5時間' },
+                { value: '2', label: '2時間' },
+                { value: '2.5', label: '2.5時間' },
+                { value: '3', label: '3時間' },
+                { value: '3.5', label: '3.5時間' },
+                { value: '4', label: '4時間' },
+                { value: '4.5', label: '4.5時間' },
+                { value: '5', label: '5時間' },
+                { value: '5.5', label: '5.5時間' },
+                { value: '6', label: '6時間' },
+                { value: '6.5', label: '6.5時間' },
+                { value: '7', label: '7時間' },
+                { value: '7.5', label: '7.5時間' },
+                { value: '8', label: '8時間' },
+              ]}
+              value={leaveForm.requested_hours}
+              onChange={(e) => setLeaveForm({ ...leaveForm, requested_hours: e.target.value })}
+            />
+          )}
           <Input
             label="理由（任意）"
             value={leaveForm.reason}
@@ -732,6 +1012,21 @@ export default function ShiftsPage() {
           </div>
         </div>
       </Modal>
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 8mm;
+          }
+          body {
+            background: #fff !important;
+          }
+          .shift-print-area .sticky {
+            position: static !important;
+            left: auto !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

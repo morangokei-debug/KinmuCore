@@ -23,9 +23,13 @@ supabase/.temp
 
 # エディタ設定
 .vscode
+.cursor
 .idea
 *.swp
 *.swo
+
+# 誤生成ディレクトリ
+node_modules 2
 
 # macOS
 .DS_Store

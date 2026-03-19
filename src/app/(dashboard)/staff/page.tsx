@@ -30,6 +30,7 @@ export default function StaffPage() {
     store_id: '',
     employment_type: 'part_time' as EmploymentType,
     hourly_rate: '',
+    show_in_punch: true,
   });
   const [saving, setSaving] = useState(false);
   const supabase = createClient();
@@ -56,6 +57,7 @@ export default function StaffPage() {
       store_id: stores[0]?.id || '',
       employment_type: 'part_time',
       hourly_rate: '',
+      show_in_punch: true,
     });
     setModalOpen(true);
   };
@@ -68,6 +70,7 @@ export default function StaffPage() {
       store_id: staff.store_id,
       employment_type: staff.employment_type,
       hourly_rate: staff.hourly_rate?.toString() || '',
+      show_in_punch: staff.show_in_punch ?? true,
     });
     setModalOpen(true);
   };
@@ -80,6 +83,7 @@ export default function StaffPage() {
       store_id: form.store_id,
       employment_type: form.employment_type,
       hourly_rate: form.hourly_rate ? parseInt(form.hourly_rate) : null,
+      show_in_punch: form.show_in_punch,
     };
 
     if (editing) {
@@ -220,6 +224,7 @@ export default function StaffPage() {
                 <th className="px-4 py-3 font-medium">所属店舗</th>
                 <th className="px-4 py-3 font-medium">雇用形態</th>
                 <th className="px-4 py-3 font-medium">時給</th>
+                <th className="px-4 py-3 font-medium">打刻表示</th>
                 <th className="px-4 py-3 font-medium">状態</th>
                 <th className="px-4 py-3 font-medium">退職日</th>
                 <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -238,6 +243,11 @@ export default function StaffPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {staff.hourly_rate ? `¥${staff.hourly_rate.toLocaleString()}` : '-'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={staff.show_in_punch ? 'success' : 'default'}>
+                      {staff.show_in_punch ? '表示' : '非表示'}
+                    </Badge>
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={statusBadgeVariant(staff.status)}>
@@ -332,6 +342,15 @@ export default function StaffPage() {
             onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
             placeholder="1200"
           />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.show_in_punch}
+              onChange={(e) => setForm({ ...form, show_in_punch: e.target.checked })}
+              className="rounded"
+            />
+            打刻画面に表示する
+          </label>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="ghost" onClick={() => setModalOpen(false)}>
               キャンセル

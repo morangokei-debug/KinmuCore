@@ -24,6 +24,7 @@ export interface Staff {
   name_kana: string | null;
   employment_type: EmploymentType;
   hourly_rate: number | null;
+  show_in_punch: boolean;
   status: StaffStatus;
   retired_at: string | null;
   display_order: number;

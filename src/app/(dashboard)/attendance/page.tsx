@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { Fragment, useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -131,6 +131,55 @@ export default function AttendancePage() {
     return map[status];
   };
 
+  const getDateHeaderClass = (workDate: string) => {
+    const day = new Date(workDate).getDay();
+    if (day === 0) return 'bg-red-50 text-red-700';
+    if (day === 6) return 'bg-blue-50 text-blue-700';
+    return 'bg-gray-50 text-gray-700';
+  };
+
+  const renderAttendanceRows = (records: AttendanceRecord[]) =>
+    records.map((record, index) => {
+      const isFirstOfDate = index === 0 || records[index - 1].work_date !== record.work_date;
+      return (
+        <Fragment key={record.id}>
+          {isFirstOfDate && (
+            <tr className={`border-y border-gray-200 ${getDateHeaderClass(record.work_date)}`}>
+              <td colSpan={8} className="px-4 py-2 text-sm font-semibold">
+                {formatDate(record.work_date, 'yyyy年M月d日 (EEE)')}
+              </td>
+            </tr>
+          )}
+          <tr className="hover:bg-gray-50">
+            <td className="px-4 py-3 text-sm text-gray-500">
+              {formatDate(record.work_date, 'M/d (EEE)')}
+            </td>
+            <td className="px-4 py-3 text-gray-700">{record.staff?.name}</td>
+            <td className="px-4 py-3 text-gray-700">
+              {record.clock_in ? formatTime(record.clock_in) : '-'}
+            </td>
+            <td className="px-4 py-3 text-gray-700">
+              {record.clock_out ? formatTime(record.clock_out) : '-'}
+            </td>
+            <td className="px-4 py-3 text-gray-500">{record.break_minutes}分</td>
+            <td className="px-4 py-3 font-medium text-gray-900">
+              {minutesToHoursMinutes(record.working_minutes)}
+            </td>
+            <td className="px-4 py-3">
+              <Badge variant={statusBadgeVariant(record.status)}>
+                {ATTENDANCE_STATUS_LABELS[record.status]}
+              </Badge>
+            </td>
+            <td className="px-4 py-3">
+              <Button variant="ghost" size="sm" onClick={() => openEdit(record)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </td>
+          </tr>
+        </Fragment>
+      );
+    });
+
   // 月間サマリーの計算
   const totalWorkingMinutes = attendances.reduce((sum, a) => sum + a.working_minutes, 0);
   const totalDays = new Set(attendances.filter((a) => a.status === 'present').map((a) => a.work_date)).size;
@@ -260,34 +309,7 @@ export default function AttendancePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {attendances.map((record) => (
-                <tr key={record.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {formatDate(record.work_date, 'MM/dd (E)')}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{record.staff?.name}</td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {record.clock_in ? formatTime(record.clock_in) : '-'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {record.clock_out ? formatTime(record.clock_out) : '-'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{record.break_minutes}分</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {minutesToHoursMinutes(record.working_minutes)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={statusBadgeVariant(record.status)}>
-                      {ATTENDANCE_STATUS_LABELS[record.status]}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(record)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {renderAttendanceRows(attendances)}
             </tbody>
           </table>
         </div>
@@ -319,34 +341,7 @@ export default function AttendancePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {records.map((record) => (
-                        <tr key={record.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">
-                            {formatDate(record.work_date, 'MM/dd (E)')}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">{record.staff?.name}</td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {record.clock_in ? formatTime(record.clock_in) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {record.clock_out ? formatTime(record.clock_out) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500">{record.break_minutes}分</td>
-                          <td className="px-4 py-3 font-medium text-gray-900">
-                            {minutesToHoursMinutes(record.working_minutes)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge variant={statusBadgeVariant(record.status)}>
-                              {ATTENDANCE_STATUS_LABELS[record.status]}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Button variant="ghost" size="sm" onClick={() => openEdit(record)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                      {renderAttendanceRows(records)}
                     </tbody>
                   </table>
                 </div>

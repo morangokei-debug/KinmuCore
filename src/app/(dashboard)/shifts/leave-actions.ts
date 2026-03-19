@@ -8,10 +8,12 @@ export type LeaveRequestWithStaff = {
   staff_id: string;
   store_id: string;
   request_date: string;
-  leave_type: 'full' | 'half';
+  leave_type: 'full' | 'half' | 'hourly';
+  requested_hours: number | null;
   reason: string | null;
   status: 'pending' | 'approved' | 'rejected';
   requested_at: string;
+  decided_at?: string | null;
   staff?: { name: string };
 };
 
@@ -26,6 +28,49 @@ export async function getPendingLeaveRequests(
       .eq('store_id', storeId)
       .eq('status', 'pending')
       .order('request_date');
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, requests: (data || []) as LeaveRequestWithStaff[] };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function getRecentLeaveRequests(
+  storeId: string
+): Promise<{ ok: true; requests: LeaveRequestWithStaff[] } | { ok: false; error: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select('*, staff:staff(name)')
+      .eq('store_id', storeId)
+      .order('requested_at', { ascending: false })
+      .limit(50);
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, requests: (data || []) as LeaveRequestWithStaff[] };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function getMyLeaveRequests(
+  staffId: string
+): Promise<{ ok: true; requests: LeaveRequestWithStaff[] } | { ok: false; error: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const myStaffId = await getMyStaffId();
+    if (!myStaffId || myStaffId !== staffId) {
+      return { ok: false, error: '自分の申請のみ確認できます' };
+    }
+
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select('*, staff:staff(name)')
+      .eq('staff_id', staffId)
+      .order('requested_at', { ascending: false })
+      .limit(30);
 
     if (error) return { ok: false, error: error.message };
     return { ok: true, requests: (data || []) as LeaveRequestWithStaff[] };
@@ -52,7 +97,8 @@ export async function submitLeaveRequest(
   staffId: string,
   storeId: string,
   requestDate: string,
-  leaveType: 'full' | 'half',
+  leaveType: 'full' | 'half' | 'hourly',
+  requestedHours?: number,
   reason?: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -70,11 +116,17 @@ export async function submitLeaveRequest(
       return { ok: false, error: '店舗が一致しません' };
     }
 
+    const normalizedHours = leaveType === 'hourly' ? Number(requestedHours || 0) : null;
+    if (leaveType === 'hourly' && (!normalizedHours || normalizedHours <= 0 || normalizedHours > 8)) {
+      return { ok: false, error: '時間有給は0.5〜8時間で指定してください' };
+    }
+
     const { error } = await supabase.from('leave_requests').insert({
       staff_id: staffId,
       store_id: storeId,
       request_date: requestDate,
       leave_type: leaveType,
+      requested_hours: normalizedHours,
       reason: reason || null,
       status: 'pending',
     });
@@ -111,16 +163,47 @@ export async function approveLeaveRequest(
 
     const staffId = req.staff_id;
     const requestDate = req.request_date;
-    const leaveType = req.leave_type as 'full' | 'half';
+    const leaveType = req.leave_type as 'full' | 'half' | 'hourly';
+    const requestedHours = req.requested_hours as number | null;
 
-    const templateCode = leaveType === 'full' ? 'paid_leave' : 'half_paid';
     const { data: templates } = await admin
       .from('shift_templates')
-      .select('id, code')
+      .select('id, code, name, short_label, working_hours, is_paid_leave, is_active')
       .eq('store_id', storeId)
-      .eq('is_paid_leave', true);
+      .eq('is_active', true);
 
-    const template = templates?.find((t: { code: string }) => t.code === templateCode) ?? templates?.[0];
+    const normalize = (v: string | null | undefined) => (v || '').toLowerCase();
+    const safeTemplates =
+      templates?.map((t) => ({
+        ...t,
+        codeNormalized: normalize(t.code),
+        nameNormalized: normalize(t.name),
+        labelNormalized: normalize(t.short_label),
+      })) || [];
+
+    const paidLeaveTemplates = safeTemplates.filter((t) => t.is_paid_leave);
+    const fullPaidTemplate =
+      paidLeaveTemplates.find((t) => t.codeNormalized === 'paid_leave') ??
+      paidLeaveTemplates[0];
+
+    let template: (typeof safeTemplates)[number] | undefined;
+    if (leaveType === 'full') {
+      template = fullPaidTemplate;
+    } else if (leaveType === 'hourly') {
+      template =
+        paidLeaveTemplates.find((t) => t.codeNormalized === 'hourly_paid') ??
+        paidLeaveTemplates.find((t) => t.codeNormalized.includes('hourly')) ??
+        fullPaidTemplate;
+    } else {
+      const halfFromCode = paidLeaveTemplates.find(
+        (t) => t.codeNormalized === 'half_paid' || t.codeNormalized === 'h.rest'
+      );
+      const halfFromName = paidLeaveTemplates.find(
+        (t) => t.nameNormalized.includes('半日') || t.labelNormalized.includes('半休')
+      );
+      template = halfFromCode ?? halfFromName ?? fullPaidTemplate;
+    }
+
     if (!template) return { ok: false, error: '有給テンプレートがありません。シフト区分で有給・半休を登録してください' };
 
     await admin.from('shifts').upsert(
@@ -129,6 +212,7 @@ export async function approveLeaveRequest(
         store_id: storeId,
         work_date: requestDate,
         shift_template_id: template.id,
+        note: leaveType === 'hourly' && requestedHours ? `時間有給(${requestedHours}h)` : null,
       },
       { onConflict: 'staff_id,work_date' }
     );

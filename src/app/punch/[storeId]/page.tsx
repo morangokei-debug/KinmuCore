@@ -36,13 +36,27 @@ export default function PunchPage() {
       .single();
     setStore(storeData);
 
-    const { data: staffData } = await supabase
+    const { data: staffDataWithVisibility, error: staffVisibilityError } = await supabase
       .from('staff')
       .select('id, name')
       .eq('store_id', storeId)
       .eq('status', 'active')
+      .eq('show_in_punch', true)
       .order('display_order')
       .order('name');
+
+    // 旧スキーマ環境（show_in_punch未適用）でも打刻画面を止めない
+    const { data: staffDataLegacy } = staffVisibilityError
+      ? await supabase
+          .from('staff')
+          .select('id, name')
+          .eq('store_id', storeId)
+          .eq('status', 'active')
+          .order('display_order')
+          .order('name')
+      : { data: null };
+
+    const staffData = staffDataWithVisibility || staffDataLegacy;
 
     if (!staffData) return;
 
