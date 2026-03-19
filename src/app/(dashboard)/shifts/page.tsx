@@ -777,20 +777,20 @@ export default function ShiftsPage() {
               </div>
             </div>
           </div>
-          <table className="w-full text-xs print:table-fixed print:text-[9px]">
+          <table className="w-full text-xs print:table-fixed print:text-[8px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[60px] print:min-w-[42px] print:px-1 print:py-1">区分</th>
-                <th className="sticky left-[60px] z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[80px] print:min-w-[62px] print:px-1 print:py-1">名前</th>
+                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[60px] print:min-w-[34px] print:px-1 print:py-1">区分</th>
+                <th className="sticky left-[60px] z-10 bg-gray-50 px-2 py-2 text-left font-medium text-gray-500 min-w-[80px] print:min-w-[54px] print:px-1 print:py-1">名前</th>
                 {dateRange.map((d) => (
-                  <th key={d.toISOString()} className={`px-1 py-2 text-center font-medium min-w-[36px] print:min-w-[22px] print:px-0.5 print:py-1 ${getDayClass(d)}`}>
+                  <th key={d.toISOString()} className={`px-1 py-2 text-center font-medium min-w-[36px] print:min-w-[18px] print:px-0.5 print:py-1 ${getDayClass(d)}`}>
                     <div>{d.getDate()}</div>
-                    <div className="text-[10px]">{dayLabels[d.getDay()]}</div>
+                    <div className="text-[10px] print:text-[8px]">{dayLabels[d.getDay()]}</div>
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[50px] print:min-w-[38px] print:px-1 print:py-1">時間</th>
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[30px] print:px-1 print:py-1">日数</th>
-                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[30px] print:px-1 print:py-1">有給</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[50px] print:min-w-[24px] print:px-1 print:py-1">時間</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[24px] print:px-1 print:py-1">日数</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[40px] print:min-w-[24px] print:px-1 print:py-1">有給</th>
               </tr>
             </thead>
             <tbody>
@@ -798,7 +798,7 @@ export default function ShiftsPage() {
                 const summary = getStaffSummary(staff.id);
                 return (
                   <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px] print:px-1 print:py-1">
+                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px] print:text-[8px] print:px-1 print:py-0.5">
                       {EMPLOYMENT_TYPE_LABELS[staff.employment_type]}
                     </td>
                     <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap print:px-1 print:py-1">
@@ -854,7 +854,7 @@ export default function ShiftsPage() {
                         >
                           {tmpl ? (
                             <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[9px]"
+                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[8px]"
                               style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
                             >
                               {tmpl.short_label}
@@ -1046,7 +1046,7 @@ export default function ShiftsPage() {
         @media print {
           @page {
             size: A4 landscape;
-            margin: 6mm;
+            margin: 4mm;
           }
           body {
             background: #fff !important;
@@ -1057,16 +1057,21 @@ export default function ShiftsPage() {
             position: static !important;
             left: auto !important;
           }
+          .shift-print-area {
+            overflow: visible !important;
+            max-width: 100% !important;
+          }
           .shift-print-area table {
             width: 100% !important;
             table-layout: fixed !important;
-            font-size: 8px !important;
+            font-size: 7px !important;
           }
           .shift-print-area th,
           .shift-print-area td {
-            padding: 2px 3px !important;
+            padding: 1px 2px !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
+            line-height: 1.1 !important;
           }
         }
       `}</style>
