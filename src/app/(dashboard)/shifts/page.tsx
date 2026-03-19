@@ -20,6 +20,7 @@ import {
   submitLeaveRequest,
   approveLeaveRequest,
   rejectLeaveRequest,
+  cancelLeaveRequest,
 } from './leave-actions';
 import type { LeaveRequestWithStaff } from './leave-actions';
 import { getStoresForCurrentUser } from '@/lib/actions/stores';
@@ -676,6 +677,7 @@ export default function ShiftsPage() {
                       <th className="px-3 py-2 font-medium">種別</th>
                       <th className="px-3 py-2 font-medium">状態</th>
                       <th className="px-3 py-2 font-medium">承認日時</th>
+                      <th className="px-3 py-2 font-medium"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -700,6 +702,24 @@ export default function ShiftsPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2 text-gray-500">{formatDateTime(req.decided_at || null)}</td>
+                        <td className="px-3 py-1">
+                          {req.status === 'pending' && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm('この申請を取り消しますか？')) return;
+                                const res = await cancelLeaveRequest(req.id);
+                                if (res.ok) {
+                                  setMyLeaveRequests((prev) => prev.filter((r) => r.id !== req.id));
+                                } else {
+                                  alert(res.error);
+                                }
+                              }}
+                              className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-600 transition hover:bg-red-50"
+                            >
+                              取り消し
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

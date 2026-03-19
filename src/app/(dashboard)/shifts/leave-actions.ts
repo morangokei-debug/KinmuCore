@@ -228,6 +228,39 @@ export async function approveLeaveRequest(
   }
 }
 
+export async function cancelLeaveRequest(
+  requestId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const myStaffId = await getMyStaffId();
+    if (!myStaffId) return { ok: false, error: 'ログインが必要です' };
+
+    const { data: req } = await supabase
+      .from('leave_requests')
+      .select('id, staff_id, status')
+      .eq('id', requestId)
+      .single();
+
+    if (!req) return { ok: false, error: '申請が見つかりません' };
+    if (req.staff_id !== myStaffId) return { ok: false, error: '自分の申請のみ取り消しできます' };
+    if (req.status !== 'pending') return { ok: false, error: '承認待ちの申請のみ取り消しできます' };
+
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from('leave_requests')
+      .delete()
+      .eq('id', requestId)
+      .eq('staff_id', myStaffId)
+      .eq('status', 'pending');
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 export async function rejectLeaveRequest(requestId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const admin = createAdminClient();
