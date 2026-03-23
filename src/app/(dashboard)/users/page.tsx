@@ -107,9 +107,17 @@ export default function UsersPage() {
                     <tr key={user.id} className="border-b border-gray-100">
                       <td className="px-4 py-3 text-gray-900">{user.email || '(未設定)'}</td>
                       <td className="px-4 py-3">
-                        <Badge variant={user.role === 'admin' ? 'info' : 'default'}>
-                          {user.role === 'admin' ? '管理者' : 'スタッフ'}
-                        </Badge>
+                        <span className="flex flex-wrap items-center gap-1">
+                          {user.role === 'admin' && (user.organization_id === null || (user.organization_id == null && user.email === 'logicworks.k@gmail.com')) && (
+                            <Badge variant="default" className="bg-amber-100 text-amber-800 text-xs">スーパー管理者</Badge>
+                          )}
+                          {user.role === 'admin' && !(user.organization_id === null || (user.organization_id == null && user.email === 'logicworks.k@gmail.com')) && (
+                            <Badge variant="default" className="bg-blue-100 text-blue-800 text-xs">組織管理者</Badge>
+                          )}
+                          {user.role === 'staff' && (
+                            <Badge variant="default" className="bg-gray-100 text-gray-700 text-xs">スタッフ</Badge>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {user.role === 'staff' && (

@@ -15,6 +15,7 @@ export type UserWithRole = {
   role: 'admin' | 'staff';
   staff_id: string | null;
   can_edit_shifts: boolean;
+  organization_id?: string | null;
 };
 
 export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithRole[] } | { ok: false; error: string }> {
@@ -44,6 +45,7 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
         role: r?.role ?? 'admin',
         staff_id: r?.staff_id ?? null,
         can_edit_shifts: r?.can_edit_shifts ?? false,
+        organization_id: undefined,
       };
     });
 
