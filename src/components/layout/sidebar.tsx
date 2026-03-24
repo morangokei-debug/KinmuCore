@@ -21,7 +21,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useUserRole } from '@/hooks/useUserRole';
-import { useIsSuperAdmin } from '@/hooks/useIsSuperAdmin';
 
 const adminNavigation = [
   { name: '勤怠管理', href: '/attendance', icon: Clock },
@@ -42,11 +41,8 @@ export function Sidebar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const role = useUserRole();
-  const isSuperAdmin = useIsSuperAdmin();
 
-  const adminNavigationResolved = isSuperAdmin
-    ? [...adminNavigation, { name: 'ユーザー管理', href: '/users', icon: UserCog }]
-    : adminNavigation;
+  const adminNavigationResolved = [...adminNavigation, { name: 'ユーザー管理', href: '/users', icon: UserCog }];
   const navigation = role === 'staff' ? staffNavigation : adminNavigationResolved;
 
   const handleLogout = async () => {
