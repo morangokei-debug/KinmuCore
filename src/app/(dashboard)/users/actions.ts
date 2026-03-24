@@ -1,6 +1,11 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getOrgContext } from '@/lib/actions/stores';
+
+const SUPER_ADMIN_EMAIL = 'logicworks.k@gmail.com';
+const UNDEFINED_COLUMN_CODE = '42703';
+const RELATION_NOT_FOUND_CODE = '42P01';
 
 export async function listStaff(): Promise<{ id: string; name: string; store_id: string; store?: { name: string } }[]> {
   const admin = createAdminClient();
@@ -18,21 +23,97 @@ export type UserWithRole = {
   organization_id?: string | null;
 };
 
+async function ensureSuperAdmin(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const org = await getOrgContext();
+  if (!org?.isSuperAdmin) {
+    return { ok: false, error: 'スーパー管理者のみ実行できます。' };
+  }
+  return { ok: true };
+}
+
+export type OrganizationOption = {
+  id: string;
+  name: string;
+};
+
+async function listOrganizationsSafe() {
+  const admin = createAdminClient();
+  const activeQuery = await admin
+    .from('organizations')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('name');
+
+  if (!activeQuery.error) {
+    return { data: (activeQuery.data || []) as OrganizationOption[], error: null as string | null, errorCode: null as string | null };
+  }
+
+  if (activeQuery.error.code === UNDEFINED_COLUMN_CODE) {
+    const fallbackQuery = await admin.from('organizations').select('id, name').order('name');
+    if (fallbackQuery.error) {
+      return { data: [] as OrganizationOption[], error: fallbackQuery.error.message, errorCode: fallbackQuery.error.code || null };
+    }
+    return { data: (fallbackQuery.data || []) as OrganizationOption[], error: null as string | null, errorCode: null as string | null };
+  }
+
+  return { data: [] as OrganizationOption[], error: activeQuery.error.message, errorCode: activeQuery.error.code || null };
+}
+
+export async function listOrganizationsForUser(): Promise<{
+  ok: true;
+  organizations: OrganizationOption[];
+} | {
+  ok: false;
+  error: string;
+}> {
+  try {
+    const org = await getOrgContext();
+    if (!org) return { ok: false, error: 'ユーザー情報の取得に失敗しました。' };
+
+    const { data: allOrganizations, error, errorCode } = await listOrganizationsSafe();
+    if (error) {
+      if (errorCode === RELATION_NOT_FOUND_CODE) {
+        return { ok: true, organizations: [] };
+      }
+      return { ok: false, error };
+    }
+
+    if (org.isSuperAdmin) {
+      return { ok: true, organizations: allOrganizations };
+    }
+
+    if (!org.organizationId) return { ok: true, organizations: [] };
+    return { ok: true, organizations: allOrganizations.filter((o) => o.id === org.organizationId) };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithRole[] } | { ok: false; error: string }> {
   try {
+    const allow = await ensureSuperAdmin();
+    if (!allow.ok) return { ok: false, error: allow.error };
+
     const admin = createAdminClient();
     const { data: authData, error: authError } = await admin.auth.admin.listUsers({ perPage: 100 });
     if (authError) return { ok: false, error: authError.message };
 
     const userIds = authData.users.map((u) => u.id);
-    const { data: rolesData } = await admin.from('user_roles').select('user_id, role, staff_id, can_edit_shifts').in('user_id', userIds);
+    const { data: rolesData } = await admin
+      .from('user_roles')
+      .select('user_id, role, staff_id, can_edit_shifts, organization_id')
+      .in('user_id', userIds);
 
-    const roleMap = new Map<string, { role: 'admin' | 'staff'; staff_id: string | null; can_edit_shifts: boolean }>();
+    const roleMap = new Map<
+      string,
+      { role: 'admin' | 'staff'; staff_id: string | null; can_edit_shifts: boolean; organization_id: string | null }
+    >();
     (rolesData || []).forEach((r) =>
       roleMap.set(r.user_id, {
         role: r.role as 'admin' | 'staff',
         staff_id: r.staff_id ?? null,
         can_edit_shifts: !!r.can_edit_shifts,
+        organization_id: r.organization_id ?? null,
       })
     );
 
@@ -45,7 +126,7 @@ export async function listUsersWithRoles(): Promise<{ ok: true; users: UserWithR
         role: r?.role ?? 'admin',
         staff_id: r?.staff_id ?? null,
         can_edit_shifts: r?.can_edit_shifts ?? false,
-        organization_id: undefined,
+        organization_id: r?.organization_id ?? null,
       };
     });
 
@@ -62,7 +143,23 @@ export async function createUser(
   staffId?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const allow = await ensureSuperAdmin();
+    if (!allow.ok) return { ok: false, error: allow.error };
+
     const admin = createAdminClient();
+    const actorOrg = await getOrgContext();
+
+    let targetOrganizationId: string | null = actorOrg?.organizationId ?? null;
+    if (role === 'staff' && staffId) {
+      const { data: staffOrg } = await admin
+        .from('staff')
+        .select('store:stores(organization_id)')
+        .eq('id', staffId)
+        .single();
+      const store = Array.isArray(staffOrg?.store) ? staffOrg.store[0] : staffOrg?.store;
+      targetOrganizationId = (store?.organization_id as string | null | undefined) ?? targetOrganizationId;
+    }
+
     const { data: user, error: createError } = await admin.auth.admin.createUser({
       email,
       password,
@@ -76,12 +173,17 @@ export async function createUser(
       role,
       staff_id: role === 'staff' ? staffId || null : null,
       can_edit_shifts: false,
+      organization_id: targetOrganizationId,
     });
     if (roleError) {
       if (roleError.message?.includes('already') || roleError.code === '23505') {
         await admin
           .from('user_roles')
-          .update({ role, staff_id: role === 'staff' ? staffId || null : null })
+          .update({
+            role,
+            staff_id: role === 'staff' ? staffId || null : null,
+            organization_id: targetOrganizationId,
+          })
           .eq('user_id', user.user.id);
       } else {
         return { ok: false, error: roleError.message };
@@ -100,10 +202,14 @@ export async function setUserRole(
   staffId?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const allow = await ensureSuperAdmin();
+    if (!allow.ok) return { ok: false, error: allow.error };
+
     const admin = createAdminClient();
+    const actorOrg = await getOrgContext();
     const { data: existing } = await admin
       .from('user_roles')
-      .select('id, staff_id, can_edit_shifts')
+      .select('id, staff_id, can_edit_shifts, organization_id')
       .eq('user_id', userId)
       .single();
 
@@ -114,10 +220,22 @@ export async function setUserRole(
           ? staffId || null
           : existing?.staff_id ?? null;
 
+    let targetOrganizationId = existing?.organization_id ?? actorOrg?.organizationId ?? null;
+    if (role === 'staff' && staffIdToSet) {
+      const { data: staffOrg } = await admin
+        .from('staff')
+        .select('store:stores(organization_id)')
+        .eq('id', staffIdToSet)
+        .single();
+      const store = Array.isArray(staffOrg?.store) ? staffOrg.store[0] : staffOrg?.store;
+      targetOrganizationId = (store?.organization_id as string | null | undefined) ?? targetOrganizationId;
+    }
+
     const payload = {
       role,
       staff_id: staffIdToSet,
       can_edit_shifts: role === 'admin' ? false : existing?.can_edit_shifts ?? false,
+      organization_id: targetOrganizationId,
     };
 
     if (existing) {
@@ -139,6 +257,9 @@ export async function setShiftEditPermission(
   canEditShifts: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const allow = await ensureSuperAdmin();
+    if (!allow.ok) return { ok: false, error: allow.error };
+
     const admin = createAdminClient();
     const { data: existing } = await admin
       .from('user_roles')
@@ -165,6 +286,53 @@ export async function setShiftEditPermission(
       can_edit_shifts: canEditShifts,
     });
     if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function setUserOrganization(
+  userId: string,
+  organizationId: string | null
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const allow = await ensureSuperAdmin();
+    if (!allow.ok) return { ok: false, error: allow.error };
+
+    const admin = createAdminClient();
+    const org = await getOrgContext();
+    if (!org) return { ok: false, error: 'ユーザー情報の取得に失敗しました。' };
+
+    const { data: roleData } = await admin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+
+    if (roleData?.role !== 'admin') {
+      return { ok: false, error: '管理者ユーザーのみ組織を設定できます。' };
+    }
+
+    const { data: authUser } = await admin.auth.admin.getUserById(userId);
+    const targetEmail = (authUser.user?.email || '').trim().toLowerCase();
+    if (targetEmail === SUPER_ADMIN_EMAIL) {
+      return { ok: false, error: 'スーパー管理者の組織は変更できません。' };
+    }
+
+    // 組織管理者は自組織のみ設定可。未設定（NULL）への変更は不可。
+    if (!org.isSuperAdmin) {
+      if (!org.organizationId) {
+        return { ok: false, error: 'あなたの組織情報が未設定です。' };
+      }
+      if (organizationId !== org.organizationId) {
+        return { ok: false, error: '自組織以外には設定できません。' };
+      }
+    }
+
+    const { error } = await admin.from('user_roles').update({ organization_id: organizationId }).eq('user_id', userId);
+    if (error) return { ok: false, error: error.message };
+
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };

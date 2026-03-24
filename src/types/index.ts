@@ -3,14 +3,24 @@
 // ========================================
 
 // --- 店舗 ---
+export interface Organization {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Store {
   id: string;
   name: string;
+  organization_id?: string | null;
   address: string | null;
   phone: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  organization?: Organization | null;
 }
 
 // --- スタッフ ---

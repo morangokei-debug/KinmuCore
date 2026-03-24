@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/modal';
 import { Plus, Pencil, Settings } from 'lucide-react';
 import type { Policy, Store, RoundingUnit, BreakDeductionType, ClosingDay } from '@/types';
 import { toLocalDateStr } from '@/lib/utils';
+import { getAccessibleStoresForCurrentUser } from '@/lib/client/org-scope';
 
 export default function PoliciesPage() {
   const [policies, setPolicies] = useState<(Policy & { store: Store })[]>([]);
@@ -19,6 +20,7 @@ export default function PoliciesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Policy | null>(null);
   const [saving, setSaving] = useState(false);
+  const [accessibleStoreIds, setAccessibleStoreIds] = useState<string[]>([]);
   const [form, setForm] = useState({
     store_id: '',
     name: 'デフォルトポリシー',
@@ -40,12 +42,24 @@ export default function PoliciesPage() {
   const supabase = createClient();
 
   const fetchData = async () => {
-    const [policiesRes, storesRes] = await Promise.all([
-      supabase.from('policies').select('*, store:stores(*)').order('created_at', { ascending: false }),
-      supabase.from('stores').select('*').eq('is_active', true).order('name'),
-    ]);
-    setPolicies((policiesRes.data as (Policy & { store: Store })[]) || []);
-    setStores(storesRes.data || []);
+    const scoped = await getAccessibleStoresForCurrentUser(supabase);
+    const allowedStores = scoped.stores || [];
+    const storeIds = allowedStores.map((s) => s.id);
+    setStores(allowedStores);
+    setAccessibleStoreIds(storeIds);
+
+    if (storeIds.length === 0) {
+      setPolicies([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('policies')
+      .select('*, store:stores(*)')
+      .in('store_id', storeIds)
+      .order('created_at', { ascending: false });
+    setPolicies((data as (Policy & { store: Store })[]) || []);
     setLoading(false);
   };
 
@@ -125,6 +139,10 @@ export default function PoliciesPage() {
     if (editing) {
       await supabase.from('policies').update(payload).eq('id', editing.id);
     } else {
+      if (!accessibleStoreIds.includes(payload.store_id)) {
+        setSaving(false);
+        return;
+      }
       await supabase.from('policies').insert(payload);
     }
     setSaving(false);

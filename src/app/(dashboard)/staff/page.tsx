@@ -12,6 +12,7 @@ import { Plus, Pencil, Users, Trash2, UserX } from 'lucide-react';
 import type { Staff, Store, EmploymentType, StaffStatus } from '@/types';
 import { toLocalDateStr } from '@/lib/utils';
 import { EMPLOYMENT_TYPE_LABELS, STAFF_STATUS_LABELS } from '@/types';
+import { getAccessibleStoresForCurrentUser } from '@/lib/client/org-scope';
 
 export default function StaffPage() {
   const [staffList, setStaffList] = useState<(Staff & { store: Store })[]>([]);
@@ -37,12 +38,24 @@ export default function StaffPage() {
   const supabase = createClient();
 
   const fetchData = async () => {
-    const [staffRes, storesRes] = await Promise.all([
-      supabase.from('staff').select('*, store:stores(*)').order('display_order').order('name'),
-      supabase.from('stores').select('*').eq('is_active', true).order('name'),
-    ]);
-    setStaffList((staffRes.data as (Staff & { store: Store })[]) || []);
-    setStores(storesRes.data || []);
+    const scoped = await getAccessibleStoresForCurrentUser(supabase);
+    const allowedStores = scoped.stores || [];
+    const storeIds = allowedStores.map((s) => s.id);
+    setStores(allowedStores);
+
+    if (storeIds.length === 0) {
+      setStaffList([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('staff')
+      .select('*, store:stores(*)')
+      .in('store_id', storeIds)
+      .order('display_order')
+      .order('name');
+    setStaffList((data as (Staff & { store: Store })[]) || []);
     setLoading(false);
   };
 

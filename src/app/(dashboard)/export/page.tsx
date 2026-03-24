@@ -10,6 +10,7 @@ import { formatDate, minutesToDecimalHours, toLocalDateStr } from '@/lib/utils';
 import type { Store, Staff, DailyAttendance } from '@/types';
 import { EMPLOYMENT_TYPE_LABELS, ATTENDANCE_STATUS_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
+import { getAccessibleStoresForCurrentUser } from '@/lib/client/org-scope';
 
 type LeaveRequestExport = {
   id: string;
@@ -47,6 +48,19 @@ type PaidLeaveShiftRaw = {
   shift_template?: { working_hours: number; is_paid_leave: boolean } | { working_hours: number; is_paid_leave: boolean }[];
 };
 
+type ShiftStartRaw = {
+  staff_id: string;
+  work_date: string;
+  custom_start_time: string | null;
+  shift_template?: { start_time: string | null } | { start_time: string | null }[];
+};
+
+type PolicyStartRaw = {
+  store_id: string;
+  standard_work_start_time: string | null;
+  effective_from: string;
+};
+
 type MissingPunchIssue = {
   id: string;
   work_date: string;
@@ -57,23 +71,28 @@ type MissingPunchIssue = {
 
 export default function ExportPage() {
   const [stores, setStores] = useState<Store[]>([]);
+  const [accessibleStoreIds, setAccessibleStoreIds] = useState<string[]>([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [exporting, setExporting] = useState(false);
   const [checkingMissing, setCheckingMissing] = useState(false);
   const [missingPunchIssues, setMissingPunchIssues] = useState<MissingPunchIssue[]>([]);
+  const [csvClockInMode, setCsvClockInMode] = useState<'raw' | 'adjusted' | 'both'>('both');
   const supabase = createClient();
 
   useEffect(() => {
     const fetchStores = async () => {
-      const { data } = await supabase.from('stores').select('*').eq('is_active', true).order('name');
-      setStores(data || []);
+      const scoped = await getAccessibleStoresForCurrentUser(supabase);
+      const allowedStores = scoped.stores || [];
+      setStores(allowedStores);
+      setAccessibleStoreIds(allowedStores.map((s) => s.id));
     };
     fetchStores();
   }, []);
 
   const fetchExportData = async () => {
+    if (accessibleStoreIds.length === 0) return [];
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = toLocalDateStr(new Date(year, month, 0));
 
@@ -87,6 +106,8 @@ export default function ExportPage() {
 
     if (selectedStore) {
       query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
     }
 
     const { data } = await query;
@@ -94,6 +115,7 @@ export default function ExportPage() {
   };
 
   const fetchLeaveRequests = async () => {
+    if (accessibleStoreIds.length === 0) return [];
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = toLocalDateStr(new Date(year, month, 0));
 
@@ -108,6 +130,8 @@ export default function ExportPage() {
 
     if (selectedStore) {
       query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
     }
 
     const { data } = await query;
@@ -155,6 +179,9 @@ export default function ExportPage() {
   };
 
   const fetchPaidLeaveTemplates = async () => {
+    if (accessibleStoreIds.length === 0) {
+      return { templateHoursByStoreCode: new Map<string, number>(), fallbackTemplateHoursByStore: new Map<string, number>() };
+    }
     let query = supabase
       .from('shift_templates')
       .select('store_id, code, working_hours, display_order, is_paid_leave')
@@ -164,6 +191,8 @@ export default function ExportPage() {
 
     if (selectedStore) {
       query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
     }
 
     const { data } = await query;
@@ -182,6 +211,7 @@ export default function ExportPage() {
   };
 
   const fetchPaidLeaveShiftHours = async () => {
+    if (accessibleStoreIds.length === 0) return new Map<string, number>();
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = toLocalDateStr(new Date(year, month, 0));
 
@@ -193,6 +223,8 @@ export default function ExportPage() {
 
     if (selectedStore) {
       query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
     }
 
     const { data } = await query;
@@ -206,6 +238,127 @@ export default function ExportPage() {
     });
 
     return map;
+  };
+
+  const fetchShiftStartTimes = async () => {
+    if (accessibleStoreIds.length === 0) return new Map<string, string>();
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = toLocalDateStr(new Date(year, month, 0));
+
+    let query = supabase
+      .from('shifts')
+      .select('staff_id, work_date, custom_start_time, shift_template:shift_templates(start_time)')
+      .gte('work_date', startDate)
+      .lte('work_date', endDate);
+
+    if (selectedStore) {
+      query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
+    }
+
+    const { data } = await query;
+    const map = new Map<string, string>();
+    const rows = (data || []) as ShiftStartRaw[];
+
+    rows.forEach((row) => {
+      const tmpl = Array.isArray(row.shift_template) ? row.shift_template[0] : row.shift_template;
+      const startTime = row.custom_start_time || tmpl?.start_time || null;
+      if (startTime) {
+        map.set(`${row.staff_id}_${row.work_date}`, startTime.slice(0, 5));
+      }
+    });
+
+    return map;
+  };
+
+  const fetchPolicyStartTimes = async () => {
+    if (accessibleStoreIds.length === 0) return new Map<string, string>();
+    let query = supabase
+      .from('policies')
+      .select('store_id, standard_work_start_time, effective_from')
+      .eq('is_active', true)
+      .not('standard_work_start_time', 'is', null)
+      .order('effective_from', { ascending: false });
+
+    if (selectedStore) {
+      query = query.eq('store_id', selectedStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
+    }
+
+    const { data } = await query;
+    const rows = (data || []) as PolicyStartRaw[];
+    const map = new Map<string, string>();
+
+    rows.forEach((row) => {
+      if (!map.has(row.store_id) && row.standard_work_start_time) {
+        map.set(row.store_id, row.standard_work_start_time.slice(0, 5));
+      }
+    });
+
+    return map;
+  };
+
+  const toDateTime = (date: string, timeHHMM: string) => new Date(`${date}T${timeHHMM}:00`);
+
+  const getAdjustedClockInAndWorkingMinutes = (
+    record: DailyAttendance & { staff: Staff; store: Store },
+    shiftStartByStaffDate: Map<string, string>,
+    policyStartByStore: Map<string, string>
+  ) => {
+    if (!record.clock_in || !record.clock_out) {
+      return {
+        clockIn: record.clock_in,
+        workingMinutes: record.working_minutes,
+      };
+    }
+
+    const shiftStart = shiftStartByStaffDate.get(`${record.staff_id}_${record.work_date}`);
+    const policyStart = policyStartByStore.get(record.store_id);
+    const baseStart = shiftStart || policyStart;
+    if (!baseStart) {
+      return {
+        clockIn: record.clock_in,
+        workingMinutes: record.working_minutes,
+      };
+    }
+
+    const actualClockIn = new Date(record.clock_in);
+    const alignedClockIn = toDateTime(record.work_date, baseStart);
+    if (actualClockIn >= alignedClockIn) {
+      return {
+        clockIn: record.clock_in,
+        workingMinutes: record.working_minutes,
+      };
+    }
+
+    const clockOut = new Date(record.clock_out);
+    const diffMinutes = Math.floor((clockOut.getTime() - alignedClockIn.getTime()) / 60000);
+    const adjustedWorkingMinutes = Math.max(0, diffMinutes - (record.break_minutes || 0));
+
+    return {
+      clockIn: alignedClockIn.toISOString(),
+      workingMinutes: adjustedWorkingMinutes,
+    };
+  };
+
+  const applyClockInAdjustments = (
+    records: (DailyAttendance & { staff: Staff; store: Store })[],
+    shiftStartByStaffDate: Map<string, string>,
+    policyStartByStore: Map<string, string>
+  ) => {
+    return records.map((record) => {
+      const adjusted = getAdjustedClockInAndWorkingMinutes(record, shiftStartByStaffDate, policyStartByStore);
+      if (adjusted.clockIn === record.clock_in && adjusted.workingMinutes === record.working_minutes) {
+        return record;
+      }
+      return {
+        ...record,
+        clock_in: adjusted.clockIn,
+        working_minutes: adjusted.workingMinutes,
+      };
+    });
   };
 
   const validateMissingPunches = (records: (DailyAttendance & { staff: Staff; store: Store })[]) => {
@@ -249,6 +402,11 @@ export default function ExportPage() {
     }
   };
 
+  const confirmContinueWhenMissing = (issues: MissingPunchIssue[]) => {
+    if (issues.length === 0) return true;
+    return window.confirm(`打刻漏れが${issues.length}件あります。そのまま出力して良いですか？`);
+  };
+
   useEffect(() => {
     runMissingCheck();
   }, [year, month, selectedStore]);
@@ -258,12 +416,22 @@ export default function ExportPage() {
     leaveRequests: LeaveRequestExport[],
     paidLeaveShiftHoursByStaffDate: Map<string, number>,
     templateHoursByStoreCode: Map<string, number>,
-    fallbackTemplateHoursByStore: Map<string, number>
+    fallbackTemplateHoursByStore: Map<string, number>,
+    options?: {
+      adjustClockIn: boolean;
+      shiftStartByStaffDate: Map<string, string>;
+      policyStartByStore: Map<string, string>;
+    }
   ) => {
     const leaveMap = new Map<string, LeaveRequestExport>();
     leaveRequests.forEach((req) => leaveMap.set(`${req.staff_id}_${req.request_date}`, req));
 
     const rows = data.map((record) => {
+      const adjusted = options?.adjustClockIn
+        ? getAdjustedClockInAndWorkingMinutes(record, options.shiftStartByStaffDate, options.policyStartByStore)
+        : null;
+      const clockInForExport = adjusted?.clockIn ?? record.clock_in;
+      const workingMinutesForExport = adjusted?.workingMinutes ?? record.working_minutes;
       const leave = leaveMap.get(`${record.staff_id}_${record.work_date}`);
       const leaveHours = leave
         ? getLeaveHours(leave, paidLeaveShiftHoursByStaffDate, templateHoursByStoreCode, fallbackTemplateHoursByStore)
@@ -274,15 +442,15 @@ export default function ExportPage() {
       フリガナ: record.staff?.name_kana || '',
       店舗: record.store?.name || '',
       雇用形態: record.staff ? EMPLOYMENT_TYPE_LABELS[record.staff.employment_type] : '',
-      出勤時刻: record.clock_in
-        ? new Date(record.clock_in).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+      出勤時刻: clockInForExport
+        ? new Date(clockInForExport).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
         : '',
       退勤時刻: record.clock_out
         ? new Date(record.clock_out).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
         : '',
       '休憩（分）': record.break_minutes,
-      '実働（分）': record.working_minutes,
-      '実働（時間）': minutesToDecimalHours(record.working_minutes),
+      '実働（分）': workingMinutesForExport,
+      '実働（時間）': minutesToDecimalHours(workingMinutesForExport),
       '残業（分）': record.overtime_minutes,
       状態: ATTENDANCE_STATUS_LABELS[record.status],
       有給申請: leave ? leaveTypeLabel(leave.leave_type, leave.requested_hours) : '',
@@ -565,67 +733,112 @@ export default function ExportPage() {
     setExporting(true);
     try {
       const { data, issues } = await runMissingCheck();
-      if (issues.length > 0) {
-        alert(`打刻漏れが${issues.length}件あります。修正後に出力してください。`);
+      if (!confirmContinueWhenMissing(issues)) {
         return;
       }
       const leaveRequests = await fetchLeaveRequests();
       const paidLeaveShiftHoursByStaffDate = await fetchPaidLeaveShiftHours();
       const { templateHoursByStoreCode, fallbackTemplateHoursByStore } = await fetchPaidLeaveTemplates();
-      const rows = buildExportRows(
+      const shiftStartByStaffDate = await fetchShiftStartTimes();
+      const policyStartByStore = await fetchPolicyStartTimes();
+      const adjustedData = applyClockInAdjustments(data, shiftStartByStaffDate, policyStartByStore);
+
+      const rowsRaw = buildExportRows(
         data,
         leaveRequests,
         paidLeaveShiftHoursByStaffDate,
         templateHoursByStoreCode,
         fallbackTemplateHoursByStore
       );
-      const summaryRows = buildSummaryRows(data, leaveRequests);
-      const staffDetails = buildStaffDetailSheets(
-        data,
+      const rowsAdjusted = buildExportRows(
+        adjustedData,
         leaveRequests,
         paidLeaveShiftHoursByStaffDate,
         templateHoursByStoreCode,
         fallbackTemplateHoursByStore
       );
 
-      const wb = XLSX.utils.book_new();
+      const summaryRowsRaw = buildSummaryRows(data, leaveRequests);
+      const summaryRowsAdjusted = buildSummaryRows(adjustedData, leaveRequests);
 
-      // 勤怠一覧シート
-      const ws1 = XLSX.utils.json_to_sheet(rows);
-      ws1['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 15 }));
-      XLSX.utils.book_append_sheet(wb, ws1, '勤怠一覧');
-
-      // スタッフ別集計シート
-      const ws2 = XLSX.utils.json_to_sheet(summaryRows);
-      ws2['!cols'] = Object.keys(summaryRows[0] || {}).map(() => ({ wch: 18 }));
-      XLSX.utils.book_append_sheet(wb, ws2, 'スタッフ別集計');
-
-      // スタッフ別詳細シート（各スタッフ1シートずつ）
-      staffDetails.forEach((detail) => {
-        const ws = XLSX.utils.json_to_sheet(detail.data);
-        ws['!cols'] = [
-          { wch: 12 }, // 日付
-          { wch: 6 },  // 曜日
-          { wch: 10 }, // 出勤時刻
-          { wch: 10 }, // 退勤時刻
-          { wch: 10 }, // 休憩
-          { wch: 10 }, // 実働（分）
-          { wch: 12 }, // 実働（時間）
-          { wch: 10 }, // 残業
-          { wch: 8 },  // 状態
-          { wch: 12 }, // 有給申請
-          { wch: 12 }, // 有給申請時間
-          { wch: 20 }, // 備考
-        ];
-        // シート名は最大31文字に制限
-        const sheetName = detail.sheetName.length > 31 ? detail.sheetName.substring(0, 31) : detail.sheetName;
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      });
+      const staffDetailsRaw = buildStaffDetailSheets(
+        data,
+        leaveRequests,
+        paidLeaveShiftHoursByStaffDate,
+        templateHoursByStoreCode,
+        fallbackTemplateHoursByStore
+      );
+      const staffDetailsAdjusted = buildStaffDetailSheets(
+        adjustedData,
+        leaveRequests,
+        paidLeaveShiftHoursByStaffDate,
+        templateHoursByStoreCode,
+        fallbackTemplateHoursByStore
+      );
 
       const storeName = selectedStore
         ? stores.find((s) => s.id === selectedStore)?.name || ''
         : '全店舗';
-      XLSX.writeFile(wb, `勤怠データ_${storeName}_${year}年${month}月.xlsx`);
+
+      const downloadExcel = (
+        rows: Record<string, unknown>[],
+        summaryRows: Record<string, unknown>[],
+        staffDetails: { sheetName: string; data: Record<string, unknown>[] }[],
+        suffix: string
+      ) => {
+        const wb = XLSX.utils.book_new();
+
+        const ws1 = XLSX.utils.json_to_sheet(rows);
+        ws1['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 15 }));
+        XLSX.utils.book_append_sheet(wb, ws1, '勤怠一覧');
+
+        const ws2 = XLSX.utils.json_to_sheet(summaryRows);
+        ws2['!cols'] = Object.keys(summaryRows[0] || {}).map(() => ({ wch: 18 }));
+        XLSX.utils.book_append_sheet(wb, ws2, 'スタッフ別集計');
+
+        staffDetails.forEach((detail) => {
+          const ws = XLSX.utils.json_to_sheet(detail.data);
+          ws['!cols'] = [
+            { wch: 12 }, // 日付
+            { wch: 6 }, // 曜日
+            { wch: 10 }, // 出勤時刻
+            { wch: 10 }, // 退勤時刻
+            { wch: 10 }, // 休憩
+            { wch: 10 }, // 実働（分）
+            { wch: 12 }, // 実働（時間）
+            { wch: 10 }, // 残業
+            { wch: 8 }, // 状態
+            { wch: 12 }, // 有給申請
+            { wch: 12 }, // 有給申請時間
+            { wch: 20 }, // 備考
+          ];
+          const sheetName = detail.sheetName.length > 31 ? detail.sheetName.substring(0, 31) : detail.sheetName;
+          XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        });
+
+        XLSX.writeFile(wb, `勤怠データ_${storeName}_${year}年${month}月_${suffix}.xlsx`);
+      };
+
+      if (csvClockInMode === 'raw') {
+        downloadExcel(rowsRaw as Record<string, unknown>[], summaryRowsRaw as Record<string, unknown>[], staffDetailsRaw, '通常');
+      } else if (csvClockInMode === 'adjusted') {
+        downloadExcel(
+          rowsAdjusted as Record<string, unknown>[],
+          summaryRowsAdjusted as Record<string, unknown>[],
+          staffDetailsAdjusted,
+          '始業補正'
+        );
+      } else {
+        downloadExcel(rowsRaw as Record<string, unknown>[], summaryRowsRaw as Record<string, unknown>[], staffDetailsRaw, '通常');
+        setTimeout(() => {
+          downloadExcel(
+            rowsAdjusted as Record<string, unknown>[],
+            summaryRowsAdjusted as Record<string, unknown>[],
+            staffDetailsAdjusted,
+            '始業補正'
+          );
+        }, 250);
+      }
     } catch (e) {
       console.error('Export error:', e);
       alert('出力に失敗しました');
@@ -637,38 +850,70 @@ export default function ExportPage() {
     setExporting(true);
     try {
       const { data, issues } = await runMissingCheck();
-      if (issues.length > 0) {
-        alert(`打刻漏れが${issues.length}件あります。修正後に出力してください。`);
+      if (!confirmContinueWhenMissing(issues)) {
         return;
       }
       const leaveRequests = await fetchLeaveRequests();
       const paidLeaveShiftHoursByStaffDate = await fetchPaidLeaveShiftHours();
       const { templateHoursByStoreCode, fallbackTemplateHoursByStore } = await fetchPaidLeaveTemplates();
-      const rows = buildExportRows(
+      const shiftStartByStaffDate = await fetchShiftStartTimes();
+      const policyStartByStore = await fetchPolicyStartTimes();
+
+      const rowsRaw = buildExportRows(
         data,
         leaveRequests,
         paidLeaveShiftHoursByStaffDate,
         templateHoursByStoreCode,
-        fallbackTemplateHoursByStore
+        fallbackTemplateHoursByStore,
+        {
+          adjustClockIn: false,
+          shiftStartByStaffDate,
+          policyStartByStore,
+        }
+      );
+      const rowsAdjusted = buildExportRows(
+        data,
+        leaveRequests,
+        paidLeaveShiftHoursByStaffDate,
+        templateHoursByStoreCode,
+        fallbackTemplateHoursByStore,
+        {
+          adjustClockIn: true,
+          shiftStartByStaffDate,
+          policyStartByStore,
+        }
       );
 
-      const headers = Object.keys(rows[0] || {});
-      const csvContent =
-        '\uFEFF' +
-        headers.join(',') +
-        '\n' +
-        rows.map((row) => headers.map((h) => `"${(row as Record<string, unknown>)[h] ?? ''}"`).join(',')).join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
       const storeName = selectedStore
         ? stores.find((s) => s.id === selectedStore)?.name || ''
         : '全店舗';
-      a.download = `勤怠データ_${storeName}_${year}年${month}月.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+
+      const downloadCsv = (rows: Record<string, unknown>[], suffix: string) => {
+        const headers = Object.keys(rows[0] || {});
+        const csvContent =
+          '\uFEFF' +
+          headers.join(',') +
+          '\n' +
+          rows.map((row) => headers.map((h) => `"${row[h] ?? ''}"`).join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `勤怠データ_${storeName}_${year}年${month}月_${suffix}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      if (csvClockInMode === 'raw') {
+        downloadCsv(rowsRaw as Record<string, unknown>[], '通常');
+      } else if (csvClockInMode === 'adjusted') {
+        downloadCsv(rowsAdjusted as Record<string, unknown>[], '始業補正');
+      } else {
+        downloadCsv(rowsRaw as Record<string, unknown>[], '通常');
+        setTimeout(() => {
+          downloadCsv(rowsAdjusted as Record<string, unknown>[], '始業補正');
+        }, 250);
+      }
     } catch (e) {
       console.error('Export error:', e);
       alert('出力に失敗しました');
@@ -700,7 +945,7 @@ export default function ExportPage() {
           <h2 className="font-semibold text-gray-900">出力条件</h2>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
             <Select
               label="対象年"
               options={yearOptions}
@@ -718,6 +963,16 @@ export default function ExportPage() {
               options={[{ value: '', label: '全店舗' }, ...stores.map((s) => ({ value: s.id, label: s.name }))]}
               value={selectedStore}
               onChange={(e) => setSelectedStore(e.target.value)}
+            />
+            <Select
+              label="出力の始業補正"
+              options={[
+                { value: 'raw', label: '通常のみ' },
+                { value: 'adjusted', label: '始業補正のみ' },
+                { value: 'both', label: '両方出力' },
+              ]}
+              value={csvClockInMode}
+              onChange={(e) => setCsvClockInMode(e.target.value as 'raw' | 'adjusted' | 'both')}
             />
           </div>
         </CardContent>
@@ -807,9 +1062,9 @@ export default function ExportPage() {
         <div className="mt-6 rounded-lg bg-blue-50 p-4">
         <h3 className="text-sm font-medium text-blue-800">出力内容について</h3>
         <ul className="mt-2 list-disc pl-5 text-sm text-blue-700 space-y-1">
-          <li>Excel: 「勤怠一覧」「スタッフ別集計」「各スタッフ詳細」シート</li>
+          <li>Excel: 「勤怠一覧」「スタッフ別集計」「各スタッフ詳細」シート（通常/始業補正/両方 を選択可能）</li>
           <li>スタッフ別詳細シートには日別の勤怠と月間合計を表示</li>
-          <li>CSV: 日別の勤怠一覧データ</li>
+          <li>CSV: 日別の勤怠一覧データ（通常/始業補正/両方 を選択可能）</li>
           <li>集計にはスタッフの時給情報がある場合、概算給与も算出されます</li>
         </ul>
       </div>

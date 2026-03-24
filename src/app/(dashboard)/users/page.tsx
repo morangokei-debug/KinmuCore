@@ -7,8 +7,16 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { Badge } from '@/components/ui/badge';
 import { UserPlus, Shield, User } from 'lucide-react';
-import { listUsersWithRoles, createUser, setUserRole, listStaff, setShiftEditPermission } from './actions';
-import type { UserWithRole } from './actions';
+import {
+  listUsersWithRoles,
+  createUser,
+  setUserRole,
+  listStaff,
+  setShiftEditPermission,
+  listOrganizationsForUser,
+  setUserOrganization,
+} from './actions';
+import type { OrganizationOption, UserWithRole } from './actions';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -16,8 +24,10 @@ export default function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' as 'admin' | 'staff', staff_id: '' });
   const [staffList, setStaffList] = useState<{ id: string; name: string; store_id: string; store?: { name: string } }[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const isSuperAdminEmail = (email: string | null) => (email || '').trim().toLowerCase() === 'logicworks.k@gmail.com';
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -34,6 +44,9 @@ export default function UsersPage() {
 
   useEffect(() => {
     listStaff().then(setStaffList);
+    listOrganizationsForUser().then((res) => {
+      if (res.ok) setOrganizations(res.organizations);
+    });
   }, []);
 
   const handleCreate = async () => {
@@ -70,6 +83,15 @@ export default function UsersPage() {
     }
   };
 
+  const handleOrganizationChange = async (userId: string, organizationId: string | null) => {
+    const res = await setUserOrganization(userId, organizationId);
+    if (res.ok) {
+      fetchUsers();
+    } else {
+      setError(res.error);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -97,7 +119,7 @@ export default function UsersPage() {
                   <tr className="border-b border-gray-200 text-left text-gray-500">
                     <th className="px-4 py-3 font-medium">メールアドレス</th>
                     <th className="px-4 py-3 font-medium">権限</th>
-                    <th className="px-4 py-3 font-medium">紐づけスタッフ</th>
+                    <th className="px-4 py-3 font-medium">紐づけ / 所属組織</th>
                     <th className="px-4 py-3 font-medium">シフト編集</th>
                     <th className="px-4 py-3 font-medium">操作</th>
                   </tr>
@@ -108,11 +130,18 @@ export default function UsersPage() {
                       <td className="px-4 py-3 text-gray-900">{user.email || '(未設定)'}</td>
                       <td className="px-4 py-3">
                         <span className="flex flex-wrap items-center gap-1">
-                          {user.role === 'admin' && (user.organization_id === null || (user.organization_id == null && user.email === 'logicworks.k@gmail.com')) && (
+                          {user.role === 'admin' && isSuperAdminEmail(user.email) && (
                             <Badge variant="default" className="bg-amber-100 text-amber-800 text-xs">スーパー管理者</Badge>
                           )}
-                          {user.role === 'admin' && !(user.organization_id === null || (user.organization_id == null && user.email === 'logicworks.k@gmail.com')) && (
+                          {user.role === 'admin' &&
+                            !isSuperAdminEmail(user.email) &&
+                            user.organization_id !== null && (
                             <Badge variant="default" className="bg-blue-100 text-blue-800 text-xs">組織管理者</Badge>
+                          )}
+                          {user.role === 'admin' &&
+                            !isSuperAdminEmail(user.email) &&
+                            user.organization_id === null && (
+                            <Badge variant="default" className="bg-orange-100 text-orange-800 text-xs">管理者（組織未設定）</Badge>
                           )}
                           {user.role === 'staff' && (
                             <Badge variant="default" className="bg-gray-100 text-gray-700 text-xs">スタッフ</Badge>
@@ -131,6 +160,23 @@ export default function UsersPage() {
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
+                        )}
+                        {user.role === 'admin' && !isSuperAdminEmail(user.email) && (
+                          <select
+                            value={user.organization_id || ''}
+                            onChange={(e) => handleOrganizationChange(user.id, e.target.value || null)}
+                            className="rounded border border-gray-300 px-2 py-1 text-xs"
+                          >
+                            <option value="">未設定</option>
+                            {organizations.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {user.role === 'admin' && isSuperAdminEmail(user.email) && (
+                          <span className="text-xs text-gray-500">スーパー管理者（固定）</span>
                         )}
                       </td>
                       <td className="px-4 py-3">

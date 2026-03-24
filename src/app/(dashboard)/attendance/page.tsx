@@ -12,6 +12,7 @@ import { Clock, ChevronLeft, ChevronRight, Pencil, ExternalLink, Store as StoreI
 import { formatDate, formatTime, minutesToHoursMinutes, toLocalDateStr } from '@/lib/utils';
 import type { DailyAttendance, Store, Staff, AttendanceStatus } from '@/types';
 import { ATTENDANCE_STATUS_LABELS } from '@/types';
+import { getAccessibleStoresForCurrentUser } from '@/lib/client/org-scope';
 
 type AttendanceRecord = DailyAttendance & { staff: Staff; store: Store };
 
@@ -25,10 +26,16 @@ export default function AttendancePage() {
   const [editModal, setEditModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState<DailyAttendance | null>(null);
   const [editForm, setEditForm] = useState({ clock_in: '', clock_out: '', break_minutes: '', note: '' });
+  const [accessibleStoreIds, setAccessibleStoreIds] = useState<string[]>([]);
   const supabase = createClient();
 
   const fetchData = async () => {
     setLoading(true);
+    if (accessibleStoreIds.length === 0) {
+      setAttendances([]);
+      setLoading(false);
+      return;
+    }
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = toLocalDateStr(new Date(year, month, 0));
 
@@ -42,6 +49,8 @@ export default function AttendancePage() {
 
     if (filterStore) {
       query = query.eq('store_id', filterStore);
+    } else {
+      query = query.in('store_id', accessibleStoreIds);
     }
 
     const { data } = await query;
@@ -50,8 +59,9 @@ export default function AttendancePage() {
   };
 
   const fetchStores = async () => {
-    const { data } = await supabase.from('stores').select('*').eq('is_active', true).order('name');
-    setStores(data || []);
+    const scoped = await getAccessibleStoresForCurrentUser(supabase);
+    setStores(scoped.stores || []);
+    setAccessibleStoreIds((scoped.stores || []).map((s) => s.id));
   };
 
   useEffect(() => {
@@ -60,7 +70,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     fetchData();
-  }, [year, month, filterStore]);
+  }, [year, month, filterStore, accessibleStoreIds.join(',')]);
 
   const prevMonth = () => {
     if (month === 1) {

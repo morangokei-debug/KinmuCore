@@ -64,6 +64,10 @@ const migrationFiles = [
   '007_add_contractor_type.sql',
   '008_user_roles.sql',
   '009_leave_requests.sql',
+  '010_shift_edit_permission.sql',
+  '011_staff_punch_visibility.sql',
+  '012_leave_requests_hourly.sql',
+  '013_organizations.sql',
 ];
 
 console.log('\nRunning migrations...\n');
