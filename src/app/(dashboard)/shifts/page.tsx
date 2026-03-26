@@ -313,14 +313,54 @@ export default function ShiftsPage() {
   const partTimeStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'part_time'));
   const contractorStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'contractor'));
   const sortedStaffList = sortStaffGroup(staffList);
-  // A4横の印刷領域を人数で均等割りして、下の空白を減らす
-  const printRowHeightMm = useMemo(() => {
-    const printableHeightMm = 194; // 210mm - top 10mm - bottom 6mm
-    const headerBlockMm = 38; // タイトル帯 + テーブルヘッダー + バッファ
+  /** A4横1枚に収めるため、人数・日数で行高・ヘッダー予約・フォントをまとめて算出 */
+  const shiftPrintVars = useMemo(() => {
+    const PRINTABLE_HEIGHT_MM = 194; // 210mm - @page top10 - bottom6
     const rows = Math.max(1, sortedStaffList.length);
-    const candidate = (printableHeightMm - headerBlockMm) / rows;
-    return Math.max(4.8, Number(candidate.toFixed(2)));
-  }, [sortedStaffList.length]);
+    const days = Math.max(1, dateRange.length);
+
+    // タイトル帯 + thead（日付2行）+ ブラウザ差・丸め用の余白
+    const bannerMm = 21;
+    const theadMm = 11 + Math.min(7, days * 0.15);
+    const slackMm = 5;
+    const headerReserveMm = bannerMm + theadMm + slackMm;
+
+    const bodyBudgetMm = PRINTABLE_HEIGHT_MM - headerReserveMm;
+    const rowHeightMm = Math.max(2.5, Number((bodyBudgetMm / rows).toFixed(2)));
+
+    // 詰まり具合（人数×日数が大きいほど小さく）
+    const density = rows * (days / 28);
+    let fontPx = 7.5;
+    if (density > 85) fontPx = 7;
+    if (density > 120) fontPx = 6.5;
+    if (density > 160) fontPx = 6;
+    if (density > 210) fontPx = 5.5;
+    if (density > 260) fontPx = 5;
+    fontPx = Math.max(5, Math.min(8, fontPx));
+
+    const lineHeight = fontPx <= 5.5 ? 1.1 : fontPx <= 6 ? 1.12 : 1.18;
+    const padVMm = density > 150 ? 0.35 : density > 100 ? 0.45 : 0.55;
+    const padHMm = density > 200 ? 0.35 : 0.5;
+
+    const titlePx = Math.round(Math.max(12, Math.min(16, 17 - rows / 8)));
+    const subPx = Math.round(Math.max(9, Math.min(12, 12 - rows / 14)));
+    const theadLabelPx = Math.max(5.5, Math.round((fontPx - 1) * 10) / 10);
+    const badgePx = Math.max(5, Math.round((fontPx - 0.5) * 10) / 10);
+
+    return {
+      '--shift-print-staff-rows': String(rows),
+      '--shift-print-row-height-mm': `${rowHeightMm}mm`,
+      '--shift-print-body-height-mm': `${Number((rows * rowHeightMm).toFixed(2))}mm`,
+      '--shift-print-font-px': `${fontPx}px`,
+      '--shift-print-line-height': String(lineHeight),
+      '--shift-print-pad-v-mm': `${padVMm}mm`,
+      '--shift-print-pad-h-mm': `${padHMm}mm`,
+      '--shift-print-banner-title-px': `${titlePx}px`,
+      '--shift-print-banner-sub-px': `${subPx}px`,
+      '--shift-print-thead-label-px': `${theadLabelPx}px`,
+      '--shift-print-badge-font-px': `${badgePx}px`,
+    } as CSSProperties;
+  }, [sortedStaffList.length, dateRange.length]);
   const manualOrderedStaff = useMemo(() => [...staffList].sort(sortByDisplayOrder), [staffList, sortByDisplayOrder]);
   const manualOrderIndexMap = useMemo(
     () => new Map(manualOrderedStaff.map((staff, index) => [staff.id, index])),
@@ -776,19 +816,14 @@ export default function ShiftsPage() {
       ) : (
         <div
           className="shift-print-area overflow-x-auto rounded-xl border border-gray-200 bg-white print:overflow-visible print:rounded-none print:border-0"
-          style={
-            {
-              ['--shift-print-staff-rows' as string]: String(Math.max(1, sortedStaffList.length)),
-              ['--shift-print-row-height-mm' as string]: `${printRowHeightMm}mm`,
-            } as CSSProperties
-          }
+          style={shiftPrintVars}
         >
           <div className="hidden print:block shift-print-banner">
-            <div className="mb-3 rounded-lg border border-gray-300 bg-gradient-to-r from-slate-50 to-white px-4 py-3 print:mb-1.5 print:py-2">
-              <div className="text-center text-lg font-semibold tracking-wide text-gray-900 print:text-base">
+            <div className="mb-3 rounded-lg border border-gray-300 bg-gradient-to-r from-slate-50 to-white px-4 py-3 print:mb-1 print:py-1.5">
+              <div className="shift-print-banner-title text-center text-lg font-semibold tracking-wide text-gray-900">
                 {stores.find((s) => s.id === selectedStore)?.name || ''} シフト表
               </div>
-              <div className="text-center text-sm text-gray-600 print:text-xs">
+              <div className="shift-print-banner-sub text-center text-sm text-gray-600">
                 {year}年{month}月（{shiftStartDay}日始まり）
               </div>
             </div>
@@ -801,7 +836,7 @@ export default function ShiftsPage() {
                 {dateRange.map((d) => (
                   <th key={d.toISOString()} className={`px-1 py-2 text-center font-medium min-w-[36px] print:min-w-[18px] print:px-0.5 print:py-1 ${getDayClass(d)}`}>
                     <div>{d.getDate()}</div>
-                    <div className="text-[10px] print:text-[8px]">{dayLabels[d.getDay()]}</div>
+                    <div className="shift-print-thead-wd text-[10px]">{dayLabels[d.getDay()]}</div>
                   </th>
                 ))}
                 <th className="px-2 py-2 text-center font-medium text-gray-500 min-w-[50px] print:min-w-[24px] print:px-1 print:py-1">時間</th>
@@ -814,7 +849,7 @@ export default function ShiftsPage() {
                 const summary = getStaffSummary(staff.id);
                 return (
                   <tr key={staff.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px] print:text-[8px] print:px-1 print:py-0.5">
+                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 text-gray-400 text-[10px] print:px-1 print:py-0.5">
                       {EMPLOYMENT_TYPE_LABELS[staff.employment_type]}
                     </td>
                     <td className="sticky left-[60px] z-10 bg-white px-2 py-1.5 font-medium text-gray-900 whitespace-nowrap print:px-1 print:py-1">
@@ -870,7 +905,7 @@ export default function ShiftsPage() {
                         >
                           {tmpl ? (
                             <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[8px] print:leading-tight"
+                              className="shift-print-badge inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:leading-tight"
                               style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
                             >
                               {tmpl.short_label}
@@ -1074,33 +1109,59 @@ export default function ShiftsPage() {
             left: auto !important;
           }
           .shift-print-area {
-            overflow: visible !important;
+            overflow: hidden !important;
             max-width: 100% !important;
-            margin-top: 2mm !important;
+            margin-top: 1mm !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .shift-print-banner-title {
+            font-size: var(--shift-print-banner-title-px, 15px) !important;
+            line-height: 1.2 !important;
+          }
+          .shift-print-banner-sub {
+            font-size: var(--shift-print-banner-sub-px, 11px) !important;
+            line-height: 1.2 !important;
+          }
+          .shift-print-thead-wd {
+            font-size: var(--shift-print-thead-label-px, 7px) !important;
+            line-height: 1.1 !important;
+          }
+          .shift-print-badge {
+            font-size: var(--shift-print-badge-font-px, 6px) !important;
+            line-height: 1.05 !important;
           }
           .shift-print-area table {
             width: 100% !important;
             table-layout: fixed !important;
-            font-size: 7px !important;
+            font-size: var(--shift-print-font-px, 7px) !important;
+            line-height: var(--shift-print-line-height, 1.15) !important;
             border-collapse: collapse !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .shift-print-area thead tr {
             height: auto !important;
+          }
+          .shift-print-area tbody {
+            height: var(--shift-print-body-height-mm, auto) !important;
           }
           .shift-print-area tbody tr {
             height: var(--shift-print-row-height-mm, 6mm) !important;
             max-height: none !important;
             box-sizing: border-box !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .shift-print-area tbody td {
             height: var(--shift-print-row-height-mm, 6mm) !important;
           }
           .shift-print-area th,
           .shift-print-area td {
-            padding: 2px 3px !important;
+            padding: var(--shift-print-pad-v-mm, 0.5mm) var(--shift-print-pad-h-mm, 0.5mm) !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
-            line-height: 1.2 !important;
+            line-height: var(--shift-print-line-height, 1.15) !important;
             vertical-align: middle !important;
           }
         }
