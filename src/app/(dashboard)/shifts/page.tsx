@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -159,6 +160,58 @@ export default function ShiftsPage() {
       }
     });
   }, [role]);
+
+  const shiftPrintAreaRef = useRef<HTMLDivElement>(null);
+
+  /** 印刷時のみレイアウト反映後にヘッダー相当の高さを測り、行高 = (100vh - offset) / 人数 に使う */
+  useEffect(() => {
+    let attemptTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const measureHeadOffset = () => {
+      const root = shiftPrintAreaRef.current;
+      if (!root) return false;
+      const banner = root.querySelector('.shift-print-banner');
+      const thead = root.querySelector('thead');
+      let h = 0;
+      if (banner instanceof HTMLElement) {
+        h += banner.getBoundingClientRect().height;
+      }
+      if (thead instanceof HTMLElement) {
+        h += thead.getBoundingClientRect().height;
+      }
+      // 帯下マージン・余白（print で詰めている分のバッファ）
+      h += 10;
+      if (h >= 48) {
+        root.style.setProperty('--shift-print-head-offset', `${Math.ceil(h)}px`);
+        return true;
+      }
+      return false;
+    };
+
+    const tryMeasure = (attempt: number) => {
+      if (measureHeadOffset()) return;
+      if (attempt >= 8) return;
+      attemptTimer = setTimeout(() => tryMeasure(attempt + 1), 40);
+    };
+
+    const onBeforePrint = () => {
+      if (attemptTimer) clearTimeout(attemptTimer);
+      tryMeasure(0);
+    };
+
+    const onAfterPrint = () => {
+      if (attemptTimer) clearTimeout(attemptTimer);
+      shiftPrintAreaRef.current?.style.removeProperty('--shift-print-head-offset');
+    };
+
+    window.addEventListener('beforeprint', onBeforePrint);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      if (attemptTimer) clearTimeout(attemptTimer);
+      window.removeEventListener('beforeprint', onBeforePrint);
+      window.removeEventListener('afterprint', onAfterPrint);
+    };
+  }, []);
 
 
   const handleSubmitLeave = async () => {
@@ -766,13 +819,21 @@ export default function ShiftsPage() {
       {loading ? (
         <div className="py-12 text-center text-gray-500">読み込み中...</div>
       ) : (
-        <div className="shift-print-area overflow-x-auto rounded-xl border border-gray-200 bg-white print:overflow-visible print:rounded-none print:border-0">
-          <div className="hidden print:block">
-            <div className="mb-3 rounded-lg border border-gray-300 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
-              <div className="text-center text-lg font-semibold tracking-wide text-gray-900">
+        <div
+          ref={shiftPrintAreaRef}
+          className="shift-print-area overflow-x-auto rounded-xl border border-gray-200 bg-white print:overflow-visible print:rounded-none print:border-0"
+          style={
+            {
+              ['--shift-print-staff-rows' as string]: String(Math.max(1, sortedStaffList.length)),
+            } as CSSProperties
+          }
+        >
+          <div className="hidden print:block shift-print-banner">
+            <div className="mb-3 rounded-lg border border-gray-300 bg-gradient-to-r from-slate-50 to-white px-4 py-3 print:mb-1.5 print:py-2">
+              <div className="text-center text-lg font-semibold tracking-wide text-gray-900 print:text-base">
                 {stores.find((s) => s.id === selectedStore)?.name || ''} シフト表
               </div>
-              <div className="text-center text-sm text-gray-600">
+              <div className="text-center text-sm text-gray-600 print:text-xs">
                 {year}年{month}月（{shiftStartDay}日始まり）
               </div>
             </div>
@@ -854,7 +915,7 @@ export default function ShiftsPage() {
                         >
                           {tmpl ? (
                             <span
-                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[8px]"
+                              className="inline-block rounded px-1 py-0.5 text-[10px] font-bold leading-tight print:px-0.5 print:py-0 print:text-[8px] print:leading-tight"
                               style={{ backgroundColor: tmpl.color + '20', color: tmpl.color }}
                             >
                               {tmpl.short_label}
@@ -1046,7 +1107,7 @@ export default function ShiftsPage() {
         @media print {
           @page {
             size: A4 landscape;
-            margin: 4mm;
+            margin: 10mm 6mm 6mm 6mm;
           }
           body {
             background: #fff !important;
@@ -1060,18 +1121,33 @@ export default function ShiftsPage() {
           .shift-print-area {
             overflow: visible !important;
             max-width: 100% !important;
+            margin-top: 2mm !important;
           }
           .shift-print-area table {
             width: 100% !important;
             table-layout: fixed !important;
             font-size: 7px !important;
+            border-collapse: collapse !important;
+          }
+          .shift-print-area thead tr {
+            height: auto !important;
+          }
+          /* beforeprint で測ったピクセルが入る。未設定時は概算（下端の空き過ぎを抑える） */
+          .shift-print-area tbody tr {
+            height: calc(
+              (100vh - var(--shift-print-head-offset, 48mm)) /
+                max(1, var(--shift-print-staff-rows, 1))
+            ) !important;
+            max-height: none !important;
+            box-sizing: border-box !important;
           }
           .shift-print-area th,
           .shift-print-area td {
-            padding: 1px 2px !important;
+            padding: 2px 3px !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
-            line-height: 1.1 !important;
+            line-height: 1.2 !important;
+            vertical-align: middle !important;
           }
         }
       `}</style>
