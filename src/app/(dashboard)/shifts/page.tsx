@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -161,59 +161,6 @@ export default function ShiftsPage() {
     });
   }, [role]);
 
-  const shiftPrintAreaRef = useRef<HTMLDivElement>(null);
-
-  /** 印刷時のみレイアウト反映後にヘッダー相当の高さを測り、行高 = (100vh - offset) / 人数 に使う */
-  useEffect(() => {
-    let attemptTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const measureHeadOffset = () => {
-      const root = shiftPrintAreaRef.current;
-      if (!root) return false;
-      const banner = root.querySelector('.shift-print-banner');
-      const thead = root.querySelector('thead');
-      let h = 0;
-      if (banner instanceof HTMLElement) {
-        h += banner.getBoundingClientRect().height;
-      }
-      if (thead instanceof HTMLElement) {
-        h += thead.getBoundingClientRect().height;
-      }
-      // 帯下マージン・余白（print で詰めている分のバッファ）
-      h += 10;
-      if (h >= 48) {
-        root.style.setProperty('--shift-print-head-offset', `${Math.ceil(h)}px`);
-        return true;
-      }
-      return false;
-    };
-
-    const tryMeasure = (attempt: number) => {
-      if (measureHeadOffset()) return;
-      if (attempt >= 8) return;
-      attemptTimer = setTimeout(() => tryMeasure(attempt + 1), 40);
-    };
-
-    const onBeforePrint = () => {
-      if (attemptTimer) clearTimeout(attemptTimer);
-      tryMeasure(0);
-    };
-
-    const onAfterPrint = () => {
-      if (attemptTimer) clearTimeout(attemptTimer);
-      shiftPrintAreaRef.current?.style.removeProperty('--shift-print-head-offset');
-    };
-
-    window.addEventListener('beforeprint', onBeforePrint);
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => {
-      if (attemptTimer) clearTimeout(attemptTimer);
-      window.removeEventListener('beforeprint', onBeforePrint);
-      window.removeEventListener('afterprint', onAfterPrint);
-    };
-  }, []);
-
-
   const handleSubmitLeave = async () => {
     if (!myStaffId || !selectedStore || !leaveForm.request_date) return;
     setLeaveError('');
@@ -366,6 +313,14 @@ export default function ShiftsPage() {
   const partTimeStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'part_time'));
   const contractorStaff = sortStaffGroup(staffList.filter((s) => s.employment_type === 'contractor'));
   const sortedStaffList = sortStaffGroup(staffList);
+  // A4横の印刷領域を人数で均等割りして、下の空白を減らす
+  const printRowHeightMm = useMemo(() => {
+    const printableHeightMm = 194; // 210mm - top 10mm - bottom 6mm
+    const headerBlockMm = 38; // タイトル帯 + テーブルヘッダー + バッファ
+    const rows = Math.max(1, sortedStaffList.length);
+    const candidate = (printableHeightMm - headerBlockMm) / rows;
+    return Math.max(4.8, Number(candidate.toFixed(2)));
+  }, [sortedStaffList.length]);
   const manualOrderedStaff = useMemo(() => [...staffList].sort(sortByDisplayOrder), [staffList, sortByDisplayOrder]);
   const manualOrderIndexMap = useMemo(
     () => new Map(manualOrderedStaff.map((staff, index) => [staff.id, index])),
@@ -820,11 +775,11 @@ export default function ShiftsPage() {
         <div className="py-12 text-center text-gray-500">読み込み中...</div>
       ) : (
         <div
-          ref={shiftPrintAreaRef}
           className="shift-print-area overflow-x-auto rounded-xl border border-gray-200 bg-white print:overflow-visible print:rounded-none print:border-0"
           style={
             {
               ['--shift-print-staff-rows' as string]: String(Math.max(1, sortedStaffList.length)),
+              ['--shift-print-row-height-mm' as string]: `${printRowHeightMm}mm`,
             } as CSSProperties
           }
         >
@@ -1132,14 +1087,13 @@ export default function ShiftsPage() {
           .shift-print-area thead tr {
             height: auto !important;
           }
-          /* beforeprint で測ったピクセルが入る。未設定時は概算（下端の空き過ぎを抑える） */
           .shift-print-area tbody tr {
-            height: calc(
-              (100vh - var(--shift-print-head-offset, 48mm)) /
-                max(1, var(--shift-print-staff-rows, 1))
-            ) !important;
+            height: var(--shift-print-row-height-mm, 6mm) !important;
             max-height: none !important;
             box-sizing: border-box !important;
+          }
+          .shift-print-area tbody td {
+            height: var(--shift-print-row-height-mm, 6mm) !important;
           }
           .shift-print-area th,
           .shift-print-area td {
