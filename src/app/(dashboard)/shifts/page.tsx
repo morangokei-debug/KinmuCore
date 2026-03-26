@@ -1137,11 +1137,15 @@ export default function ShiftsPage() {
             font-size: var(--shift-print-font-px, 7px) !important;
             line-height: var(--shift-print-line-height, 1.15) !important;
             border-collapse: collapse !important;
+            border: 0.75pt solid #111 !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
           .shift-print-area thead tr {
             height: auto !important;
+          }
+          .shift-print-area thead th {
+            border-bottom: 1pt solid #000 !important;
           }
           .shift-print-area tbody {
             height: var(--shift-print-body-height-mm, auto) !important;
@@ -1159,10 +1163,17 @@ export default function ShiftsPage() {
           .shift-print-area th,
           .shift-print-area td {
             padding: var(--shift-print-pad-v-mm, 0.5mm) var(--shift-print-pad-h-mm, 0.5mm) !important;
+            border: 0.6pt solid #1a1a1a !important;
+            border-style: solid !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
             line-height: var(--shift-print-line-height, 1.15) !important;
             vertical-align: middle !important;
+          }
+          .shift-print-banner > div {
+            border-color: #333 !important;
+            border-width: 1px !important;
+            border-style: solid !important;
           }
         }
       `}</style>
