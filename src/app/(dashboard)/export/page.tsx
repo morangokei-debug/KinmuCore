@@ -73,8 +73,10 @@ export default function ExportPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [accessibleStoreIds, setAccessibleStoreIds] = useState<string[]>([]);
   const [selectedStore, setSelectedStore] = useState('');
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [startYear, setStartYear] = useState(new Date().getFullYear());
+  const [startMonth, setStartMonth] = useState(new Date().getMonth() + 1);
+  const [endYear, setEndYear] = useState(new Date().getFullYear());
+  const [endMonth, setEndMonth] = useState(new Date().getMonth() + 1);
   const [exporting, setExporting] = useState(false);
   const [checkingMissing, setCheckingMissing] = useState(false);
   const [missingPunchIssues, setMissingPunchIssues] = useState<MissingPunchIssue[]>([]);
@@ -93,8 +95,8 @@ export default function ExportPage() {
 
   const fetchExportData = async () => {
     if (accessibleStoreIds.length === 0) return [];
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = toLocalDateStr(new Date(year, month, 0));
+    const startDate = `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const endDate = toLocalDateStr(new Date(endYear, endMonth, 0));
 
     let query = supabase
       .from('daily_attendance')
@@ -116,8 +118,8 @@ export default function ExportPage() {
 
   const fetchLeaveRequests = async () => {
     if (accessibleStoreIds.length === 0) return [];
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = toLocalDateStr(new Date(year, month, 0));
+    const startDate = `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const endDate = toLocalDateStr(new Date(endYear, endMonth, 0));
 
     let query = supabase
       .from('leave_requests')
@@ -212,8 +214,8 @@ export default function ExportPage() {
 
   const fetchPaidLeaveShiftHours = async () => {
     if (accessibleStoreIds.length === 0) return new Map<string, number>();
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = toLocalDateStr(new Date(year, month, 0));
+    const startDate = `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const endDate = toLocalDateStr(new Date(endYear, endMonth, 0));
 
     let query = supabase
       .from('shifts')
@@ -242,8 +244,8 @@ export default function ExportPage() {
 
   const fetchShiftStartTimes = async () => {
     if (accessibleStoreIds.length === 0) return new Map<string, string>();
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = toLocalDateStr(new Date(year, month, 0));
+    const startDate = `${startYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const endDate = toLocalDateStr(new Date(endYear, endMonth, 0));
 
     let query = supabase
       .from('shifts')
@@ -409,7 +411,7 @@ export default function ExportPage() {
 
   useEffect(() => {
     runMissingCheck();
-  }, [year, month, selectedStore]);
+  }, [startYear, startMonth, endYear, endMonth, selectedStore]);
 
   const buildExportRows = (
     data: (DailyAttendance & { staff: Staff; store: Store })[],
@@ -816,7 +818,10 @@ export default function ExportPage() {
           XLSX.utils.book_append_sheet(wb, ws, sheetName);
         });
 
-        XLSX.writeFile(wb, `勤怠データ_${storeName}_${year}年${month}月_${suffix}.xlsx`);
+        const periodLabel = (startYear === endYear && startMonth === endMonth)
+          ? `${startYear}年${startMonth}月`
+          : `${startYear}年${startMonth}月〜${endYear}年${endMonth}月`;
+        XLSX.writeFile(wb, `勤怠データ_${storeName}_${periodLabel}_${suffix}.xlsx`);
       };
 
       if (csvClockInMode === 'raw') {
@@ -899,7 +904,10 @@ export default function ExportPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `勤怠データ_${storeName}_${year}年${month}月_${suffix}.csv`;
+        const periodLabel = (startYear === endYear && startMonth === endMonth)
+          ? `${startYear}年${startMonth}月`
+          : `${startYear}年${startMonth}月〜${endYear}年${endMonth}月`;
+        a.download = `勤怠データ_${storeName}_${periodLabel}_${suffix}.csv`;
         a.click();
         URL.revokeObjectURL(url);
       };
@@ -945,35 +953,61 @@ export default function ExportPage() {
           <h2 className="font-semibold text-gray-900">出力条件</h2>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <Select
-              label="対象年"
-              options={yearOptions}
-              value={year.toString()}
-              onChange={(e) => setYear(parseInt(e.target.value))}
-            />
-            <Select
-              label="対象月"
-              options={monthOptions}
-              value={month.toString()}
-              onChange={(e) => setMonth(parseInt(e.target.value))}
-            />
-            <Select
-              label="対象店舗"
-              options={[{ value: '', label: '全店舗' }, ...stores.map((s) => ({ value: s.id, label: s.name }))]}
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-            />
-            <Select
-              label="出力の始業補正"
-              options={[
-                { value: 'raw', label: '通常のみ' },
-                { value: 'adjusted', label: '始業補正のみ' },
-                { value: 'both', label: '両方出力' },
-              ]}
-              value={csvClockInMode}
-              onChange={(e) => setCsvClockInMode(e.target.value as 'raw' | 'adjusted' | 'both')}
-            />
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div className="sm:col-span-2">
+                <p className="mb-1 text-sm font-medium text-gray-700">開始年月</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    label=""
+                    options={yearOptions}
+                    value={startYear.toString()}
+                    onChange={(e) => setStartYear(parseInt(e.target.value))}
+                  />
+                  <Select
+                    label=""
+                    options={monthOptions}
+                    value={startMonth.toString()}
+                    onChange={(e) => setStartMonth(parseInt(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="mb-1 text-sm font-medium text-gray-700">終了年月</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    label=""
+                    options={yearOptions}
+                    value={endYear.toString()}
+                    onChange={(e) => setEndYear(parseInt(e.target.value))}
+                  />
+                  <Select
+                    label=""
+                    options={monthOptions}
+                    value={endMonth.toString()}
+                    onChange={(e) => setEndMonth(parseInt(e.target.value))}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select
+                label="対象店舗"
+                options={[{ value: '', label: '全店舗' }, ...stores.map((s) => ({ value: s.id, label: s.name }))]}
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+              />
+              <Select
+                label="出力の始業補正"
+                options={[
+                  { value: 'raw', label: '通常のみ' },
+                  { value: 'adjusted', label: '始業補正のみ' },
+                  { value: 'both', label: '両方出力' },
+                ]}
+                value={csvClockInMode}
+                onChange={(e) => setCsvClockInMode(e.target.value as 'raw' | 'adjusted' | 'both')}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
